@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Minecraft Server Manager</h1>
+    </header>
+
+    <main>
+        <div id="guides-section">
+            <h2>Guías de Inicio Rápido</h2>
+            <details>
+                <summary>Paso 1: Cómo Crear la VPS en Oracle Cloud</summary>
+                <div class="guide-content">
+                    <p>Sigue la guía oficial de Oracle para crear una instancia "Siempre Gratis" con 4 OCPUs y 24GB de RAM. Asegúrate de usar una imagen de <strong>Ubuntu</strong> y <strong>guardar tu clave SSH privada</strong>.</p>
+                </div>
+            </details>
+            <details>
+                <summary>Paso 2: Cómo Configurar OCI CLI</summary>
+                <div class="guide-content">
+                    <p>Para que esta herramienta pueda abrir el firewall de tu nube automáticamente, necesitas configurar la OCI CLI. Sigue la <a href="https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm" target="_blank">guía de instalación oficial</a>, y luego ejecuta <code>oci setup config</code> en tu terminal y sigue los pasos.</p>
+                </div>
+            </details>
+        </div>
+        
+        <div class="card" id="connection-section">
+            <h2>Iniciar Sesión en la VPS</h2>
+            <form id="connection-form">
+                <label for="vps-ip">Dirección IP de la VPS:</label>
+                <input type="text" id="vps-ip" placeholder="ej. 203.0.113.1" required>
+                <label for="ssh-user">Usuario SSH:</label>
+                <input type="text" id="ssh-user" placeholder="ej. ubuntu" required>
+                <label for="ssh-key-input">Llave Privada SSH (.pem):</label>
+                <input type="file" id="ssh-key-input" accept=".pem,.key" required>
+                <small id="ssh-key-status">Ningún archivo seleccionado.</small>
+                <button type="submit">Conectar</button>
+                <p id="connection-status"></p>
+            </form>
+        </div>
+        
+        <div class="card hidden" id="oci-config-section">
+            <h2>Configuración de Oracle Cloud</h2>
+            <label for="oci-compartment-id">OCID de tu Compartimento:</label>
+            <input type="text" id="oci-compartment-id" placeholder="ocid1.compartment.oc1..xxxx">
+            <label for="oci-vcn-id">OCID de tu VCN (Opcional):</label>
+            <input type="text" id="oci-vcn-id" placeholder="ocid1.vcn.oc1..xxxx">
+            <small>Si se deja en blanco, se usará la primera VCN encontrada.</small>
+            <div class="oci-actions-bar">
+                <button id="save-oci-button">Guardar Configuración OCI</button>
+            </div>
+        </div>
+
+        <div id="management-sections" class="hidden">
+            <div class="card" id="server-creation">
+                <div id="new-server-panel" class="hidden">
+                    <h2>2. Instalar un Nuevo Servidor</h2>
+                    <p>No se ha detectado un servidor. Rellena los siguientes campos para crear uno.</p>
+                    <div id="installation-form-container"></div>
+                    <button id="install-button" class="action-button">Instalar Servidor</button>
+                </div>
+
+                <div id="existing-server-panel" class="hidden">
+                    <h2>2. Servidor Detectado</h2>
+                    <p>Se ha detectado un servidor de Minecraft. Ya puedes controlarlo desde la sección de Monitoreo.</p>
+                </div>
+            </div>
+
+            <div class="card" id="logs-monitoring">
+                <h2>3. Control y Monitoreo</h2>
+                <fieldset>
+                    <legend>Control del Servidor</legend>
+                    <div class="server-actions">
+                        <button id="start-server">Iniciar</button>
+                        <button id="stop-server">Detener</button>
+                        <button id="restart-server">Reiniciar</button>
+                        <button id="check-status">Estado</button>
+                        <button id="live-logs-button">Logs en Vivo</button>
+                    </div>
+                </fieldset>
+                
+                <fieldset>
+                    <legend>Consola / Salida de Comandos</legend>
+                    <textarea id="server-console" rows="15" readonly></textarea>
+                </fieldset>
+                
+                <fieldset>
+                    <legend>Interacción con la VPS</legend>
+                    <div class="custom-command-section">
+                        <div class="command-input-group">
+                            <input type="text" id="custom-command-input" placeholder="Ej: ls -la ~">
+                            <button id="execute-custom-command-button">Ejecutar Comando</button>
+                        </div>
+                    </div>
+                </fieldset>
+                
+                <fieldset>
+                    <legend>Gestión de Red (Oracle Cloud)</legend>
+                    <div class="advanced-actions">
+                        <button id="open-oci-firewall-button">Abrir Firewall de OCI (Puerto 25565)</button>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>Minecraft Server Manager</p>
+    </footer>
+
+    <template id="server-form-template">
+       <fieldset>
+            <legend>Configuración Básica</legend>
+            <div class="form-grid">
+                <div>
+                    <label for="server-type">Tipo de Servidor:</label>
+                    <select id="server-type">
+                        <option value="vanilla" selected>Vanilla (Oficial)</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="server-version">Versión de Minecraft:</label>
+                    <input id="server-version" value="1.21">
+                </div>
+            </div>
+            <div class="ram-config">
+                <div><label for="min-ram">RAM Mínima:</label><input type="text" id="min-ram" value="1G"></div>
+                <div><label for="max-ram">RAM Máxima:</label><input type="text" id="max-ram" value="20G"></div>
+            </div>
+        </fieldset>
+        
+        <fieldset>
+            <legend>Personalización del Mundo (server.properties)</legend>
+            <div class="form-grid">
+                <div><label for="motd">Mensaje del Día (MOTD):</label><input type="text" id="motd" value="Un Servidor de Minecraft"></div>
+                <div><label for="level-name">Nombre del Mundo:</label><input type="text" id="level-name" value="world"></div>
+                <div><label for="max-players">Máx. Jugadores:</label><input type="number" id="max-players" value="20" min="1"></div>
+                <div><label for="view-distance">Distancia de Visión:</label><input type="number" id="view-distance" value="10" min="2"></div>
+                <div><label for="gamemode">Modo de Juego:</label><select id="gamemode"><option value="survival" selected>Survival</option><option value="creative">Creative</option></select></div>
+                <div><label for="difficulty">Dificultad:</label><select id="difficulty"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
+                <div><label for="pvp">PVP:</label><select id="pvp"><option value="true" selected>Activado</option><option value="false">Desactivado</option></select></div>
+                <div><label for="hardcore">Modo Hardcore:</label><select id="hardcore"><option value="false" selected>Desactivado</option><option value="true">Activado</option></select></div>
+            </div>
+        </fieldset>
+    </template>
+
+    <script src="script.js"></script>
+</body>
+</html>
