@@ -100,7 +100,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const mcVersion = minecraftVersionSelect.value;
         const properties = collectInstallerProperties();
         if (!serverType || !mcVersion) { installerOutput.textContent = 'Debe seleccionar tipo y versión.'; return; }
-        installerOutput.textContent = ''; installServerBtn.disabled = true;
+        installerOutput.textContent = '';
+        installServerBtn.disabled = true;
         try {
             const res = await fetch('http://localhost:3000/api/install-server', {
                 method: 'POST',
@@ -110,14 +111,46 @@ document.addEventListener('DOMContentLoaded', () => {
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let done = false;
+            let logText = '';
+            let installResult = null;
             while (!done) {
                 const { value, done: finished } = await reader.read();
-                if (value) installerOutput.textContent += decoder.decode(value);
+                if (value) {
+                    const chunk = decoder.decode(value);
+                    installerOutput.textContent += chunk;
+                    logText += chunk;
+                    const match = chunk.match(/__INSTALL_DONE__ IP=(\S+) PORT=(\S+) NAME=(.*?) MOTD=(.*)/);
+                    if (match) {
+                        installResult = { ip: match[1], port: match[2], name: match[3], motd: match[4] };
+                    }
+                }
                 done = finished;
+            }
+            hideInstallerModal();
+            if (installResult) {
+                notificationArea.innerHTML = `IP: ${installResult.ip} | Puerto: ${installResult.port} | Nombre: ${installResult.name} | MOTD: ${installResult.motd}`;
+                showModal('Instalación completada', `<p>El servidor se ha instalado e iniciado correctamente.</p><p>IP: ${installResult.ip}</p><p>Puerto: ${installResult.port}</p><p>Nombre: ${installResult.name}</p><p>MOTD: ${installResult.motd}</p>`);
+            } else {
+                showModal('Instalación fallida', '<p>Ocurrió un error durante la instalación. Se generó un log.</p>',
+                    `<div class="flex gap-2">`+
+                    `<button id="view-log-btn" class="px-3 py-1 bg-blue-600 rounded">Ver log</button>`+
+                    `<button id="export-log-btn" class="px-3 py-1 bg-green-600 rounded">Exportar log</button>`+
+                    `<button id="close-log-btn" class="px-3 py-1 bg-gray-600 rounded">Cerrar</button>`+
+                    `</div>`);
+                const viewBtn = document.getElementById('view-log-btn');
+                const exportBtn = document.getElementById('export-log-btn');
+                const closeBtn = document.getElementById('close-log-btn');
+                viewBtn.addEventListener('click', () => showModal('Log de instalación', `<pre class="whitespace-pre-wrap text-sm">${logText}</pre>`));
+                exportBtn.addEventListener('click', () => downloadFile('install-log.txt', logText));
+                closeBtn.addEventListener('click', hideModal);
             }
         } catch (error) {
             installerOutput.textContent += `\nERROR: ${error.message}`;
-        } finally { installServerBtn.disabled = false; }
+            hideInstallerModal();
+            showModal('Instalación fallida', `<p class="text-red-400">${error.message}</p>`);
+        } finally {
+            installServerBtn.disabled = false;
+        }
     });
 
     // --- Lógica de API ---
@@ -365,7 +398,6 @@ document.addEventListener('DOMContentLoaded', () => {
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
     modsGuideBtn.addEventListener('click', async () => {
         try {
-            hideInstallerModal();
             const data = await apiCall('/api/get-guide?file=guia_mods.md', {}, 'GET');
             showModal('Instalar mods', data.content);
         } catch (error) {

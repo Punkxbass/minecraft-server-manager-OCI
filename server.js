@@ -185,14 +185,14 @@ _SCRIPT
 chmod +x start.sh
 
 echo "Paso 6: Creando servicio de systemd con screen..."
-sudo tee /etc/systemd/system/minecraft.service > /dev/null << '_SERVICE'
+sudo tee /etc/systemd/system/minecraft.service > /dev/null << _SERVICE
 [Unit]
 Description=Minecraft Server (${serverType} ${mcVersion})
 After=network.target
 [Service]
 User=${sshData.sshUser}
 Nice=1
-KillMode=none
+KillMode=control-group
 SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
 ExecStart=/usr/bin/screen -L -Logfile $SERVER_DIR/screen.log -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
@@ -203,8 +203,13 @@ _SERVICE
 
 sudo systemctl daemon-reload
 sudo systemctl enable minecraft
-echo "Servicio creado y habilitado."
-echo "--- Instalación Finalizada ---"
+sudo systemctl start minecraft
+SERVER_IP=$(curl -s ifconfig.me)
+SERVER_PORT=$(grep -E '^server-port=' server.properties | cut -d= -f2)
+SERVER_NAME=$(grep -E '^server-name=' server.properties | cut -d= -f2)
+SERVER_MOTD=$(grep -E '^motd=' server.properties | cut -d= -f2)
+echo "Servicio creado, habilitado e iniciado."
+echo "__INSTALL_DONE__ IP=$SERVER_IP PORT=$SERVER_PORT NAME=$SERVER_NAME MOTD=$SERVER_MOTD"
 `;
 
   execSshCommand(sshData.conn, installScript, res).catch(err => {
@@ -287,10 +292,15 @@ app.get('/api/get-screen-log', async (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/screen.log`;
+  const basePath = SERVER_PATH_BASE(sshData.sshUser);
+  const command = `if [ -f ${basePath}/screen.log ]; then cat ${basePath}/screen.log; elif [ -f ${basePath}/screenlog.0 ]; then cat ${basePath}/screenlog.0; else echo '__NO_LOG_FILE__'; fi`;
   try {
-    const { output } = await execSshCommand(sshData.conn, `cat ${logPath}`);
-    res.json({ success: true, logContent: output });
+    const { output } = await execSshCommand(sshData.conn, command);
+    if (output.includes('__NO_LOG_FILE__')) {
+      res.status(404).json({ message: 'No se encontró el archivo de log de la consola.' });
+    } else {
+      res.json({ success: true, logContent: output });
+    }
   } catch (error) {
     res.status(500).json({ message: `No se pudo leer el log de screen: ${error.message}` });
   }
@@ -323,16 +333,28 @@ app.get('/api/live-logs', (req, res) => {
   if (!sshData) return res.status(400).end('Conexión no encontrada.');
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
-  const command = `tail -F -n 50 ${SERVER_PATH_BASE(sshData.sshUser)}/screen.log`;
+  const basePath = SERVER_PATH_BASE(sshData.sshUser);
+  const command = `if [ -f ${basePath}/screen.log ]; then tail -F -n 50 ${basePath}/screen.log; elif [ -f ${basePath}/screenlog.0 ]; then tail -F -n 50 ${basePath}/screenlog.0; else echo '__NO_LOG_FILE__'; fi`;
   sshData.conn.exec(command, (err, stream) => {
     if (err) {
       res.write(`data: [ERROR] No se pudo acceder al archivo de logs.\n\n`);
       res.end();
       return;
     }
-    stream.on('data', data => data.toString().split('\n').forEach(line => line.trim() && res.write(`data: ${line}\n\n`)))
-          .stderr.on('data', data => res.write(`data: [ERROR LOGS]: ${data.toString().trim()}\n\n`))
-          .on('close', () => res.end());
+    stream.on('data', data => {
+      data.toString().split('\n').forEach(line => {
+        if (!line.trim()) return;
+        if (line.trim() === '__NO_LOG_FILE__') {
+          res.write(`data: [ERROR] No se encontró el archivo de logs.\n\n`);
+          stream.close();
+          res.end();
+        } else {
+          res.write(`data: ${line}\n\n`);
+        }
+      });
+    })
+    .stderr.on('data', data => res.write(`data: [ERROR LOGS]: ${data.toString().trim()}\n\n`))
+    .on('close', () => res.end());
     req.on('close', () => { clearInterval(heartbeat); stream.close(); });
   });
 });
