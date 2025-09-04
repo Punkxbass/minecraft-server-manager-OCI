@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const state = {
         connectionId: null,
-        eventSource: null,
+        systemEventSource: null,
         sshKeyContent: null,
         lastStatusOutput: '',
         resourceMonitorInterval: null,
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         installerOutput.textContent = '';
         installServerBtn.disabled = true;
         try {
-            const res = await fetch('http://localhost:3000/api/install-server', {
+            const res = await fetch('/api/install-server', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties })
@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const options = { method, headers: { 'Content-Type': 'application/json' }};
             if (method !== 'GET') options.body = JSON.stringify(body);
-            const response = await fetch(`http://localhost:3000${endpoint}`, options);
+            const response = await fetch(endpoint, options);
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Error en el servidor');
             return data;
@@ -173,14 +173,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const data = await apiCall('/api/connect', { vpsIp, sshUser, sshKey: state.sshKeyContent });
             state.connectionId = data.connectionId; loginView.classList.add('hidden'); mainView.classList.remove('hidden');
-            await checkServerStatus(); startLiveLogs(); startResourceMonitor();
+            await checkServerStatus(); startSystemLogs(); startResourceMonitor();
         } catch (error) { loginError.textContent = `Error: ${error.message}`;
         } finally { connectBtn.disabled = false; connectBtn.textContent = 'Conectar'; }
     }
     connectBtn.addEventListener('click', connectToServer);
     disconnectBtn.addEventListener('click', () => {
         if (state.connectionId) apiCall('/api/disconnect', { connectionId: state.connectionId });
-        stopLiveLogs(); stopResourceMonitor(); stopScreenConsole();
+        stopSystemLogs(); stopResourceMonitor(); stopScreenConsole();
         state.connectionId = null; state.sshKeyContent = null;
         sshKeyFileName.textContent = ''; logConsole.innerHTML = ''; notificationArea.innerHTML = '';
         mainView.classList.add('hidden'); loginView.classList.remove('hidden');
@@ -314,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
             checkServerStatus();
             // Reiniciar los logs en vivo si la acción fue start o restart
             if (['start', 'restart'].includes(action)) {
-                startLiveLogs();
+                startSystemLogs();
             }
 
         } catch (error) { 
@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         document.getElementById('backup-server-btn').addEventListener('click', async () => {
             try {
-                const res = await fetch(`http://localhost:3000/api/export-server?connectionId=${state.connectionId}`);
+                const res = await fetch(`/api/export-server?connectionId=${state.connectionId}`);
                 const blob = await res.blob();
                 downloadFile('server-backup.tar.gz', blob);
             } catch (err) {
@@ -369,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function exportLatestLog() {
         if (!state.connectionId) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/get-latest-log?connectionId=${state.connectionId}`);
+            const res = await fetch(`/api/get-latest-log?connectionId=${state.connectionId}`);
             const data = await res.json();
             downloadFile('latest.log', data.logContent || '');
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
@@ -377,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function exportScreenLog() {
         if (!state.connectionId) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/get-screen-log?connectionId=${state.connectionId}`);
+            const res = await fetch(`/api/get-screen-log?connectionId=${state.connectionId}`);
             const data = await res.json();
             downloadFile('screen.log', data.logContent || '');
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
@@ -418,29 +418,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Logs en vivo ---
-    function startLiveLogs() {
-        stopLiveLogs();
+    function startSystemLogs() {
+        stopSystemLogs();
         logConsole.innerHTML = '<p class="text-yellow-400">Conectando a logs en vivo...</p>';
-        const url = `http://localhost:3000/api/live-logs?connectionId=${state.connectionId}`;
-        state.eventSource = new EventSource(url);
+        const url = `/api/system-logs?connectionId=${state.connectionId}`;
+        state.systemEventSource = new EventSource(url);
         let firstMessage = true;
-        state.eventSource.onopen = () => {
+        state.systemEventSource.onopen = () => {
             if (firstMessage) logConsole.innerHTML = '<p class="text-yellow-400">Conexión a logs establecida. Esperando datos...</p>';
         };
-        state.eventSource.onmessage = (event) => {
+        state.systemEventSource.onmessage = (event) => {
             if (firstMessage) { logConsole.innerHTML = ''; firstMessage = false; }
             const p = document.createElement('p'); p.textContent = event.data;
             logConsole.appendChild(p); logConsole.scrollTop = logConsole.scrollHeight;
         };
-        state.eventSource.onerror = () => {
+        state.systemEventSource.onerror = () => {
             if (!firstMessage) logConsole.innerHTML += '<p class="text-red-500 mt-4">Conexión a logs perdida.</p>';
-            stopLiveLogs();
+            stopSystemLogs();
         };
     }
-    function stopLiveLogs() { if (state.eventSource) { state.eventSource.close(); state.eventSource = null; } }
+    function stopSystemLogs() { if (state.systemEventSource) { state.systemEventSource.close(); state.systemEventSource = null; } }
     function startScreenConsole() {
         stopScreenConsole();
-        const url = `http://localhost:3000/api/live-logs?connectionId=${state.connectionId}`;
+        const url = `/api/screen-logs?connectionId=${state.connectionId}`;
         state.screenEventSource = new EventSource(url);
         state.screenEventSource.onmessage = (event) => {
             const p = document.createElement('p');
@@ -474,7 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const oci = await apiCall('/api/open-oci-firewall', { compartmentId });
             let message = `<p>${oci.message}</p>`;
             if (state.connectionId) {
-                const res = await fetch('http://localhost:3000/api/open-ufw', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ connectionId: state.connectionId }) });
+                const res = await fetch('/api/open-ufw', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ connectionId: state.connectionId }) });
                 const text = await res.text();
                 message += `<pre class="bg-black p-2 rounded mt-2 whitespace-pre-wrap">${text}</pre>`;
             }
@@ -598,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const body = { connectionId: state.connectionId, action };
             if (file) body.file = file;
-            const res = await fetch('http://localhost:3000/api/backups', {
+            const res = await fetch('/api/backups', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
             });
             const reader = res.body.getReader();
