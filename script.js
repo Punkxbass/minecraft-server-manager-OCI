@@ -289,9 +289,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }));
 
-    deepCleanBtn.addEventListener('click', async () => {
-        if (confirm('¿ESTÁS SEGURO? Esta acción es irreversible y eliminará todos los archivos del servidor de Minecraft y el servicio del sistema.')) {
-            showModal('Limpieza Profunda', '<p>Ejecutando script de limpieza en el servidor...</p>');
+    deepCleanBtn.addEventListener('click', () => {
+        showModal(
+            'Eliminar Servidor',
+            '<p>Esta acción borrará todos los datos de la VPS y dejará la instancia como nueva. ¿Deseas continuar?</p>',
+            '<button id="backup-server-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg mr-2">Respaldar Servidor</button><button id="confirm-deep-clean-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Confirmar Formateo</button>'
+        );
+        document.getElementById('backup-server-btn').addEventListener('click', async () => {
+            try {
+                const res = await fetch(`http://localhost:3000/api/export-server?connectionId=${state.connectionId}`);
+                const blob = await res.blob();
+                downloadFile('server-backup.tar.gz', blob);
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+        document.getElementById('confirm-deep-clean-btn').addEventListener('click', async () => {
+            showModal('Formateando VPS', '<p>Ejecutando limpieza...</p>');
             try {
                 const data = await apiCall('/api/deep-clean', { connectionId: state.connectionId });
                 showModal('Limpieza Completada', `<pre>${data.output}</pre>`);
@@ -299,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 showModal('Error en la Limpieza', `<p class="text-red-400">${error.message}</p>`);
             }
-        }
+        });
     });
 
       function collectInstallerProperties() {
@@ -312,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       function downloadFile(filename, content) {
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const blob = content instanceof Blob ? content : new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), { href: url, download: filename });
         document.body.appendChild(a); a.click();
@@ -332,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`http://localhost:3000/api/get-screen-log?connectionId=${state.connectionId}`);
             const data = await res.json();
-            downloadFile('screenlog.0', data.logContent || '');
+            downloadFile('screen.log', data.logContent || '');
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
 
@@ -343,23 +357,29 @@ document.addEventListener('DOMContentLoaded', () => {
     screenConsoleModal.addEventListener('click', (e) => { if (e.target === screenConsoleModal) closeScreenConsole(); });
     screenConsoleSend.addEventListener('click', () => { sendCommand(screenConsoleInput.value.trim()); screenConsoleInput.value=''; });
     screenConsoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(screenConsoleInput.value.trim()); screenConsoleInput.value=''; }});
-    screenCmdBtns.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.command)));
+    screenCmdBtns.forEach(btn => btn.addEventListener('click', () => {
+        screenConsoleInput.value = btn.dataset.command;
+        screenConsoleInput.focus();
+    }));
     screenExportLogBtn.addEventListener('click', exportScreenLog);
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
     modsGuideBtn.addEventListener('click', async () => {
         try {
+            hideInstallerModal();
             const data = await apiCall('/api/get-guide?file=guia_mods.md', {}, 'GET');
             showModal('Instalar mods', data.content);
         } catch (error) {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
-    commandPresetBtns.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.command)));
-    sendCommandBtn.addEventListener('click', () => sendCommand(commandInput.value.trim()));
-    commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCommand(commandInput.value.trim()); });
+    commandPresetBtns.forEach(btn => btn.addEventListener('click', () => {
+        commandInput.value = btn.dataset.command;
+        commandInput.focus();
+    }));
+    sendCommandBtn.addEventListener('click', () => { sendCommand(commandInput.value.trim()); commandInput.value=''; });
+    commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(commandInput.value.trim()); commandInput.value=''; } });
     function sendCommand(command) {
         if (!command) return;
-        commandInput.value = '';
         apiCall('/api/send-command', { connectionId: state.connectionId, command }).catch(err => {
             showModal('Error', `<p class=\"text-red-400\">${err.message}</p>`);
         });
