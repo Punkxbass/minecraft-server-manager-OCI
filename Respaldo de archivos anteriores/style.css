@@ -1,0 +1,298 @@
+/* ==========================================================================
+   1. Sistema de Diseño Global (Design System)
+   ========================================================================== */
+:root {
+    /* Paleta de Colores */
+    --color-primary: #28a745; /* Un verde más vibrante */
+    --color-primary-hover: #218838;
+    --color-danger: #dc3545;
+    --color-danger-hover: #c82333;
+    --color-warning: #ffc107;
+    --color-background: #f8f9fa;
+    --color-surface: #ffffff;
+    --color-text-primary: #212529;
+    --color-text-secondary: #6c757d;
+    --color-border: #dee2e6;
+    --color-border-focus: #80bdff;
+    --color-shadow: rgba(0, 0, 0, 0.1);
+
+    /* Tipografía */
+    --font-family-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-family-monospace: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    --font-size-base: 16px;
+    --line-height-base: 1.6;
+
+    /* Espaciado y Bordes */
+    --spacing-unit: 8px;
+    --border-radius: 6px;
+    --box-shadow: 0 2px 5px var(--color-shadow);
+}
+
+/* ==========================================================================
+   2. Reseteo y Estilos Base
+   ========================================================================== */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-base);
+    color: var(--color-text-primary);
+    background-color: var(--color-background);
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+    margin: 0 0 1rem 0;
+    line-height: 1.3;
+    font-weight: 600;
+}
+
+h1 { font-size: 2em; }
+h2 {
+    font-size: 1.5em;
+    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: calc(var(--spacing-unit) * 1.5);
+}
+h3 { font-size: 1.25em; margin-top: 1.5rem; }
+h4 { font-size: 1.1em; color: var(--color-text-secondary); margin-top: 1.5em; }
+
+p { margin: 0 0 1rem 0; }
+small { font-size: 0.9em; color: var(--color-text-secondary); display: block; margin-top: calc(var(--spacing-unit) * -1); margin-bottom: var(--spacing-unit); }
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+    background-color: #e3e6e8;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-family: var(--font-family-monospace);
+    font-size: 0.95em;
+}
+
+
+/* ==========================================================================
+   3. Estructura y Layout
+   ========================================================================== */
+.hidden { display: none !important; }
+
+header {
+    background-color: var(--color-primary);
+    color: white;
+    padding: 1.2rem 0;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+main {
+    padding: calc(var(--spacing-unit) * 3);
+    max-width: 1200px; /* Ancho mayor para la vista de dos columnas */
+    margin: 20px auto;
+}
+
+#management-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); /* Columnas responsivas */
+    gap: calc(var(--spacing-unit) * 3);
+    align-items: start;
+}
+
+.card {
+    background-color: var(--color-surface);
+    padding: calc(var(--spacing-unit) * 3);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    border: 1px solid var(--color-border);
+}
+
+footer {
+    text-align: center;
+    padding: calc(var(--spacing-unit) * 2.5);
+    background-color: #343a40;
+    color: white;
+    margin-top: calc(var(--spacing-unit) * 3);
+}
+
+/* ==========================================================================
+   4. Formularios y Entradas (Estilo Unificado)
+   ========================================================================== */
+label {
+    display: block;
+    margin-bottom: var(--spacing-unit);
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+input[type="text"],
+input[type="file"],
+input[type="number"],
+select,
+textarea {
+    width: 100%;
+    padding: calc(var(--spacing-unit) * 1.25);
+    margin-bottom: calc(var(--spacing-unit) * 2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    font-size: 1em;
+    font-family: var(--font-family-sans);
+    background-color: #fff;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+    border-color: var(--color-border-focus);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+    outline: none;
+}
+
+textarea#server-console {
+    font-family: var(--font-family-monospace);
+    background-color: #2b2b2b;
+    color: #f0f0f0;
+    border: 1px solid #444;
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+fieldset {
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    padding: calc(var(--spacing-unit) * 2.5);
+    margin-bottom: calc(var(--spacing-unit) * 3);
+}
+
+legend {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: var(--color-text-primary);
+    padding: 0 var(--spacing-unit);
+    margin-left: var(--spacing-unit);
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: calc(var(--spacing-unit) * 2);
+}
+
+.ram-config { display: flex; gap: calc(var(--spacing-unit) * 2); margin-bottom: var(--spacing-unit); }
+.ram-config > div { flex: 1; }
+
+/* ==========================================================================
+   5. Botones (Estilo Unificado)
+   ========================================================================== */
+button, .button-like-label {
+    background-color: var(--color-primary);
+    color: white;
+    padding: 12px 18px;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    text-align: center;
+    transition: background-color 0.2s, transform 0.1s;
+    display: inline-block;
+}
+
+button:hover, .button-like-label:hover {
+    background-color: var(--color-primary-hover);
+    transform: translateY(-1px);
+}
+
+button:active { transform: translateY(0); }
+
+.danger-button { background-color: var(--color-danger); }
+.danger-button:hover { background-color: var(--color-danger-hover); }
+
+.server-actions, .advanced-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-unit);
+}
+.server-actions button, .advanced-actions button { margin: 0; }
+
+/* ==========================================================================
+   6. Componentes Específicos
+   ========================================================================== */
+#connection-section { max-width: 500px; margin: 20px auto; }
+#connection-status { margin-top: 15px; font-weight: bold; }
+
+.notification {
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: var(--border-radius);
+    border: 1px solid transparent;
+    color: #155724;
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+.notification .ip-display {
+    font-weight: bold;
+    font-family: var(--font-family-monospace);
+    background-color: #cce8d2;
+    padding: 5px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+.destructive-fieldset { border-color: var(--color-danger); }
+.destructive-fieldset legend { color: var(--color-danger); }
+
+.command-input-group { display: flex; gap: var(--spacing-unit); }
+.command-input-group input { flex-grow: 1; margin: 0; }
+.command-input-group button { flex-shrink: 0; margin: 0; }
+
+/* --- Guías de Inicio --- */
+#guides-section { background-color: transparent; box-shadow: none; padding: 0; max-width: 900px; margin: 20px auto; }
+#guides-section details { border: 1px solid var(--color-border); border-radius: var(--border-radius); margin-bottom: 10px; background-color: var(--color-surface); overflow: hidden; }
+#guides-section summary { font-size: 1.1em; font-weight: 600; padding: 15px; cursor: pointer; background-color: #f1f1f1; list-style: none; transition: background-color 0.2s; }
+#guides-section summary:hover { background-color: #e9e9e9; }
+#guides-section summary::before { content: '▶ '; font-size: 0.9em; margin-right: var(--spacing-unit); }
+#guides-section details[open] summary { background-color: #e0e0e0; }
+#guides-section details[open] summary::before { content: '▼ '; }
+#guides-section .guide-content { padding: var(--spacing-unit) calc(var(--spacing-unit) * 2.5) calc(var(--spacing-unit) * 2.5); border-top: 1px solid var(--color-border); }
+
+/* ****** NUEVOS ESTILOS PARA LA SECCIÓN DE CONFIGURACIÓN DE OCI ****** */
+.oci-actions-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: calc(var(--spacing-unit) * 2);
+    margin-top: calc(var(--spacing-unit) * 2.5);
+}
+
+.oci-button-group {
+    display: flex;
+    gap: var(--spacing-unit);
+    flex-grow: 1; /* Permite que el grupo de botones ocupe el espacio disponible */
+}
+
+.oci-button-group > button,
+.oci-button-group > a {
+    flex-grow: 1; /* Hace que los botones dentro del grupo sean proporcionales */
+}
+
+#oci-verify-key-button {
+    background-color: #f0ad4e;
+}
+
+#oci-verify-key-button:hover {
+    background-color: #ec971f;
+}
+
+.help-link-right {
+    font-size: 0.85em; /* Texto más pequeño */
+    color: var(--color-text-secondary);
+    white-space: nowrap; /* Evita que el texto se parta en dos líneas */
+}
+/* ****** FIN DE LOS NUEVOS ESTILOS ****** */

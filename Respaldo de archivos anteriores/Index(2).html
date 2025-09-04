@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Minecraft Server Manager</h1>
+    </header>
+
+    <main>
+        <div id="guides-section">
+            <h2>Guías de Inicio Rápido</h2>
+            <details>
+                <summary>Paso 1: Cómo Crear la VPS en Oracle Cloud</summary>
+                <div class="guide-content">
+                    <h4>1. Crear una Cuenta en Oracle Cloud</h4>
+                    <ol>
+                        <li>Visita la página de registro de Oracle Cloud Free Tier.</li>
+                        <li>Proporciona información precisa y asegúrate de que la dirección coincida con la de tu tarjeta de crédito para la verificación.</li>
+                        <li>Se requiere una tarjeta válida para una retención temporal de ~1 USD; no se realizarán cargos por recursos gratuitos.</li>
+                        <li>Selecciona tu "Región de Origen" (Home Region) más cercana a tus jugadores para minimizar la latencia.</li>
+                    </ol>
+
+                    <h4>2. Crear una Red Virtual en la Nube (VCN)</h4>
+                    <ol>
+                        <li>En la consola de OCI, ve a <strong>Redes -> Redes virtuales en la nube</strong> y haz clic en <strong>Iniciar el asistente de VCN</strong>.</li>
+                        <li>Selecciona "Crear VCN con conexión a Internet", asígnale un nombre (ej. <code>minecraft-vcn</code>) y acepta los valores por defecto.</li>
+                    </ol>
+
+                    <h4>3. Lanzar la Instancia de Computación (VM)</h4>
+                    <ol>
+                        <li>Ve a <strong>Recursos informáticos -> Instancias</strong> y haz clic en <strong>Crear instancia</strong>.</li>
+                        <li>Asigna un nombre (ej. <code>minecraft-server</code>).</li>
+                        <li>En "Imagen y unidad", haz clic en "Editar".</li>
+                        <li><strong>Imagen:</strong> Cambia la imagen a <strong>Canonical Ubuntu</strong> (última versión LTS).</li>
+                        <li><strong>Unidad:</strong> Cambia la unidad a la serie <strong>Ampere (VM.Standard.A1.Flex)</strong>. Asegúrate de que tenga la etiqueta "Siempre gratis".</li>
+                        <li>Arrastra los deslizadores para asignar <strong>4 OCPU</strong> y <strong>24 GB de RAM</strong>.</li>
+                        <li><strong>Redes:</strong> Selecciona la VCN que creaste y asegúrate de marcar "Asignar una dirección IPv4 pública".</li>
+                        <li><strong>Agregar claves SSH:</strong> Selecciona "Generar un par de claves para mí" y <strong>guarda la clave privada y la pública</strong> en un lugar seguro. Necesitarás la clave privada para conectarte.</li>
+                        <li>Haz clic en <strong>Crear</strong>. En unos minutos, la instancia estará "En ejecución" y podrás ver su IP pública.</li>
+                    </ol>
+                </div>
+            </details>
+            <details>
+                <summary>Paso 2: Cómo Instalar un Servidor de Minecraft Manualmente</summary>
+                <div class="guide-content">
+                    <h4>1. Conexión y Actualización del Sistema</h4>
+                    <ol>
+                        <li>Conéctate a tu servidor usando SSH con la clave privada que guardaste: <br><code>ssh -i /ruta/a/tu/clave_privada.key ubuntu@TU_IP_PUBLICA</code></li>
+                        <li>Actualiza todos los paquetes del sistema: <br><code>sudo apt update && sudo apt upgrade -y</code></li>
+                    </ol>
+
+                    <h4>2. Instalación de Java 21</h4>
+                    <ol>
+                        <li>Minecraft reciente requiere Java 21. Instálalo con: <br><code>sudo apt install openjdk-21-jdk -y</code></li>
+                        <li>Verifica la instalación con: <code>java --version</code>.</li>
+                    </ol>
+
+                    <h4>3. Despliegue del Servidor (PaperMC Recomendado)</h4>
+                    <ol>
+                        <li>Crea un directorio para el servidor: <br><code>mkdir ~/server && cd ~/server</code></li>
+                        <li>Descarga la última versión de PaperMC (visita su web para el link más reciente): <br><code>wget https://api.papermc.io/v2/projects/paper/versions/1.21/builds/81/downloads/paper-1.21-81.jar</code></li>
+                        <li>Renombra el archivo para facilitar su uso: <br><code>mv paper-*.jar server.jar</code></li>
+                        <li>Ejecútalo por primera vez para generar archivos. Fallará: <br><code>java -Xms2G -Xmx20G -jar server.jar --nogui</code></li>
+                        <li>Acepta el EULA. Edita el archivo <code>eula.txt</code> y cambia <code>eula=false</code> a <code>eula=true</code>.</li>
+                    </ol>
+
+                    <h4>4. Configuración del Firewall (2 Capas)</h4>
+                    <ol>
+                        <li><strong>Capa 1 (Firewall de OCI):</strong> En la consola de OCI, ve a los detalles de la subred de tu instancia, entra a la "Lista de seguridad por defecto" y añade <strong>dos reglas de entrada</strong> para el CIDR <code>0.0.0.0/0</code> y el puerto <code>25565</code>: una para <strong>TCP</strong> y otra para <strong>UDP</strong>.</li>
+                        <li><strong>Capa 2 (Firewall de la VPS):</strong> En la terminal de tu VPS, ejecuta: <br><code>sudo ufw allow 25565/tcp</code> <br><code>sudo ufw allow 25565/udp</code> <br><code>sudo ufw enable</code></li>
+                    </ol>
+                </div>
+            </details>
+            <details open>
+                <summary>Paso 3: Cómo Configurar OCI CLI (Guía Mejorada)</summary>
+                <div class="guide-content">
+                    <p>La OCI CLI es esencial para que esta aplicación pueda gestionar el firewall de Oracle Cloud automáticamente. Sigue estos pasos con atención.</p>
+                    <ol>
+                        <li><strong>Instala la OCI CLI:</strong> Sigue la <a href="https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm" target="_blank">guía de instalación oficial de Oracle</a> para tu sistema operativo.</li>
+                        <li><strong>Inicia la Configuración:</strong> En una nueva terminal (CMD, PowerShell, Bash, etc.), ejecuta: <code>oci setup config</code></li>
+                        <li><strong>Introduce tus OCIDs:</strong> El asistente te pedirá tu `user` y `tenancy` OCID. Los encuentras en la consola de OCI, en el menú de tu perfil (ícono arriba a la derecha).</li>
+                        <li><strong>Genera tus Claves API:</strong> El asistente te preguntará si quieres generar un nuevo par de claves RSA. Responde <code>Y</code> (Sí) y presiona Enter. Acepta las rutas por defecto que te ofrezca. <strong>No es necesario que le pongas una `passphrase`</strong>; puedes presionar Enter dos veces para dejarla en blanco.</li>
+                        <li>
+                            <strong>Copia la Clave Pública:</strong>
+                            <ul>
+                                <li>El proceso anterior creó un archivo llamado <code>oci_api_key_public.pem</code> en la carpeta <code>.oci</code> de tu usuario (ej. <code>C:\Users\TuUsuario\.oci\</code>).</li>
+                                <li>Abre ese archivo con cualquier editor de texto (como el Bloc de notas) y <strong>copia todo su contenido</strong>, desde `-----BEGIN PUBLIC KEY-----` hasta `-----END PUBLIC KEY-----`.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Sube y Verifica la Clave en Oracle Cloud:</strong>
+                            <ol type="a">
+                                <li>Ve a la consola de OCI. Haz clic en el <strong>ícono de tu perfil</strong> (arriba a la derecha) <strong>-></strong> selecciona <strong>tu nombre de usuario</strong>.</li>
+                                <li>En el menú de la izquierda, haz clic en <strong>"Claves de API" (API Keys)</strong>.</li>
+                                <li>Haz clic en el botón azul <strong>"Agregar Clave de API" (Add API Key)</strong>.</li>
+                                <li>En la ventana que aparece, selecciona la opción <strong>"Pegar Clave Pública" (Paste Public Key)</strong> y pega el contenido que copiaste en el paso anterior.</li>
+                                <li>Haz clic en "Agregar" (Add).</li>
+                            </ol>
+                        </li>
+                        <li>
+                            <strong>¡Paso de Verificación Crucial!</strong>
+                            <ul>
+                                <li>Al terminar el comando <code>oci setup config</code> en tu terminal, se mostrará un <strong>Fingerprint</strong>.</li>
+                                <li>Al agregar la clave en la consola de Oracle, también se mostrará un <strong>Fingerprint</strong> en la lista.</li>
+                                <li><strong>¡Ambos fingerprints deben coincidir perfectamente!</strong> Si no coinciden, algo salió mal. Repite el proceso desde el paso 2. 
+                                <br><em>(El fingerprint que nos compartiste, `2d:72:...`, debe ser el que veas en ambos lugares).</em></li>
+                            </ul>
+                        </li>
+                    </ol>
+                    <p>Una vez verificado, esta aplicación ya puede comunicarse de forma segura con tu cuenta de Oracle Cloud.</p>
+                </div>
+            </details>
+        </div>
+        
+        <div class="card" id="connection-section">
+            <h2>Iniciar Sesión en la VPS</h2>
+            <form id="connection-form">
+                <label for="vps-ip">Dirección IP de la VPS:</label>
+                <input type="text" id="vps-ip" placeholder="ej. 203.0.113.1" required>
+                <label for="ssh-user">Usuario SSH:</label>
+                <input type="text" id="ssh-user" placeholder="ej. opc, ubuntu, admin" required>
+                <label for="ssh-key-input">Llave Privada SSH (.pem o similar):</label>
+                <input type="file" id="ssh-key-input" accept=".pem,.key">
+                <small id="ssh-key-status">Selecciona un archivo o importa una configuración.</small>
+                <button type="submit">Conectar</button>
+                <p id="connection-status"></p>
+            </form>
+            <div class="config-management">
+                <h3>Gestión de Configuración</h3>
+                <label for="import-config-input" class="button-like-label">
+                    Importar Conexión
+                    <input type="file" id="import-config-input" accept=".json" style="display: none;">
+                </label>
+            </div>
+        </div>
+        
+        <div class="card hidden" id="oci-config-section">
+            <h2>Configuración de Oracle Cloud</h2>
+            <p>Necesario para gestionar el firewall automáticamente.</p>
+
+            <div class="form-group-with-link">
+                <label for="oci-compartment-id">OCID de tu Compartimento:</label>
+                <a href="https://cloud.oracle.com/identity/compartments" target="_blank" class="help-link">¿Dónde lo encuentro?</a>
+            </div>
+            <input type="text" id="oci-compartment-id" placeholder="ocid1.compartment.oc1..xxxxxxxxxxxx">
+            <small>El compartimento que contiene tu VPS y tu red (VCN).</small>
+            
+            <div id="vcn-manual-entry" class="hidden" style="margin-top: 15px;">
+                 <div class="form-group-with-link">
+                    <label for="oci-vcn-id">OCID de tu VCN (Opcional):</label>
+                    <a href="https://cloud.oracle.com/networking/vcns" target="_blank" class="help-link">Buscar en OCI</a>
+                </div>
+                <input type="text" id="oci-vcn-id" placeholder="ocid1.vcn.oc1..xxxxxxxxxxxx">
+            </div>
+
+            <div class="oci-actions-bar">
+                <div class="oci-button-group">
+                    <a href="https://cloud.oracle.com/identity/users" target="_blank" class="button-like-label" id="oci-verify-key-button">Ir a OCI para Añadir/Verificar Clave API</a>
+                    <button id="save-oci-button">Guardar Configuración</button>
+                </div>
+                <a href="#" id="toggle-vcn-input" class="help-link-right">Ingresar VCN ID manualmente</a>
+            </div>
+            </div>
+
+        <div id="management-sections" class="hidden">
+            <div class="card" id="server-control">
+                <div id="success-notification-top" class="notification hidden"></div>
+
+                <div id="new-server-panel">
+                    <h2>2. Instalar un Nuevo Servidor</h2>
+                    <p>No se ha detectado un servidor. Rellena los siguientes campos para crear uno.</p>
+                    <div id="installation-form-container"></div>
+                    <button id="install-button" class="action-button">Instalar Servidor</button>
+                    <button id="save-install-button">Guardar Configuración</button>
+                </div>
+
+                <div id="existing-server-panel" class="hidden">
+                    <h2>2. Gestionar Servidor Existente</h2>
+                    <p>Se ha detectado un servidor. Puedes modificar sus propiedades o realizar otras acciones.</p>
+                    <fieldset>
+                        <legend>Configuración Actual</legend>
+                        <div id="existing-config-form-container"></div>
+                        <button id="update-properties-button" class="action-button">Aplicar Cambios y Reiniciar</button>
+                    </fieldset>
+                    <fieldset class="destructive-fieldset">
+                        <legend>Acciones Destructivas</legend>
+                        <p>Estas acciones no se pueden deshacer. Úsalas con precaución.</p>
+                        <button id="overwrite-server-button" class="danger-button">Sobreescribir Servidor</button>
+                        <button id="delete-server-button" class="danger-button">Eliminar Servidor</button>
+                    </fieldset>
+                </div>
+            </div>
+
+            <div class="card" id="logs-monitoring">
+                <h2>3. Control y Monitoreo</h2>
+                <fieldset>
+                    <legend>Control del Servidor</legend>
+                    <div class="server-actions">
+                        <button id="start-server">Iniciar</button>
+                        <button id="stop-server">Detener</button>
+                        <button id="restart-server">Reiniciar</button>
+                        <button id="check-status">Estado</button>
+                        <button id="check-server-again-button">Verificar Servidor</button>
+                        <button id="live-logs-button">Logs en Vivo</button>
+                    </div>
+                </fieldset>
+                
+                <fieldset>
+                    <legend>Consola / Salida de Comandos</legend>
+                    <textarea id="server-console" rows="15" readonly></textarea>
+                </fieldset>
+
+                <div id="success-notification-bottom" class="notification hidden"></div>
+                
+                <fieldset>
+                    <legend>Interacción con la VPS</legend>
+                     <div class="server-actions">
+                        <button id="list-files-button">Listar Archivos (~)</button>
+                        <button id="disk-usage-button">Uso de Disco</button>
+                        <button id="view-file-button">Ver Contenido de Archivo</button>
+                    </div>
+                    <div class="custom-command-section">
+                        <label for="custom-command-input">Comando Personalizado:</label>
+                        <div class="command-input-group">
+                            <input type="text" id="custom-command-input" placeholder="Ej: ls -la /var/log">
+                            <button id="execute-custom-command-button">Ejecutar</button>
+                        </div>
+                        <small>¡Cuidado! La ejecución de comandos tiene acceso completo a tu servidor.</small>
+                    </div>
+                </fieldset>
+                
+                <fieldset>
+                    <legend>Gestión Avanzada</legend>
+                    <div class="advanced-actions">
+                        <button id="open-oci-firewall-button">Abrir/Verificar Firewall de OCI</button>
+                        <button id="export-config-post-auth">Exportar Conexión</button>
+                        <button id="export-logs-full-button">Exportar Log Completo</button>
+                        <button id="export-logs-session-button">Exportar Log de Sesión</button>
+                        <button id="refresh-metrics">Ver Métricas de Uso</button>
+                    </div>
+                </fieldset>
+
+                <fieldset class="destructive-fieldset">
+                    <legend>Zona de Peligro</legend>
+                    <div class="advanced-actions">
+                        <button id="clean-vps-button" class="danger-button">Limpieza Profunda de Servidor</button>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>Minecraft Server Manager - Gestión Simplificada.</p>
+    </footer>
+
+    <template id="server-form-template">
+       <fieldset>
+            <legend>Configuración Básica</legend>
+            <div class="form-grid">
+                <div>
+                    <label for="server-type">Tipo de Servidor:</label>
+                    <select id="server-type">
+                        <option value="vanilla" selected>Vanilla (Oficial)</option>
+                        <option value="fabric" disabled>Fabric (Próximamente)</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="server-version">Versión de Minecraft:</label>
+                    <select id="server-version" required></select>
+                </div>
+            </div>
+            <small class="version-lock-notice hidden">El tipo y la versión no se pueden cambiar. Para ello, usa la opción "Sobreescribir Servidor".</small>
+            <div class="ram-config">
+                <div><label for="min-ram">RAM Mínima:</label><input type="text" id="min-ram" value="1024M"></div>
+                <div><label for="max-ram">RAM Máxima:</label><input type="text" id="max-ram" value="4G"></div>
+            </div>
+        </fieldset>
+        
+        <fieldset>
+            <legend>Personalización del Mundo (server.properties)</legend>
+            <div class="form-grid">
+                <div><label for="motd">Mensaje del Día (MOTD):</label><input type="text" id="motd" value="Un Servidor de Minecraft"></div>
+                <div><label for="level-name">Nombre del Mundo:</label><input type="text" id="level-name" value="world"></div>
+                <div><label for="max-players">Máx. Jugadores:</label><input type="number" id="max-players" value="20" min="1"></div>
+                <div><label for="view-distance">Distancia de Visión:</label><input type="number" id="view-distance" value="10" min="2"></div>
+                <div><label for="gamemode">Modo de Juego:</label><select id="gamemode"><option value="survival" selected>Survival</option><option value="creative">Creative</option><option value="adventure">Adventure</option><option value="spectator">Spectator</option></select></div>
+                <div><label for="difficulty">Dificultad:</label><select id="difficulty"><option value="peaceful">Peaceful</option><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
+                <div><label for="pvp">PVP:</label><select id="pvp"><option value="true" selected>Activado</option><option value="false">Desactivado</option></select></div>
+                <div><label for="hardcore">Modo Hardcore:</label><select id="hardcore"><option value="false" selected>Desactivado</option><option value="true">Activado</option></select></div>
+                <div><label for="allow-nether">Permitir Nether:</label><select id="allow-nether"><option value="true" selected>Sí</option><option value="false">No</option></select></div>
+                <div><label for="spawn-monsters">Generar Monstruos:</label><select id="spawn-monsters"><option value="true" selected>Sí</option><option value="false">No</option></select></div>
+                <div><label for="spawn-animals">Generar Animales:</label><select id="spawn-animals"><option value="true" selected>Sí</option><option value="false">No</option></select></div>
+                <div><label for="spawn-npcs">Generar NPCs:</label><select id="spawn-npcs"><option value="true" selected>Sí</option><option value="false">No</option></select></div>
+                <div><label for="enable-command-block">Bloques de Comandos:</label><select id="enable-command-block"><option value="false" selected>Desactivados</option><option value="true">Activados</option></select></div>
+            </div>
+        </fieldset>
+    </template>
+
+    <script src="script.js"></script>
+</body>
+</html>

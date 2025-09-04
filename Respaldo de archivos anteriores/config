@@ -1,0 +1,6 @@
+[DEFAULT]
+user=ocid1.user.oc1..aaaaaaaatynqwe2psfx4y4r2bf2t4nl4ooelc6y4cgp5z473gxxx3jdd6ava
+fingerprint=2d:72:ea:b5:c3:c7:a7:e7:d8:76:0e:a0:23:9d:93:44
+key_file=C:\Users\Darm_\Downloads\minecraft-manager\oci_api_key.pem
+tenancy=ocid1.tenancy.oc1..aaaaaaaa3yoaelqjrbxhtupwsb2r5ywuxzqfg7auhvivjdbb5avm5n6aftya
+region=sa-bogota-1
