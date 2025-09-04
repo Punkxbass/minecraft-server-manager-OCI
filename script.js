@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sshKeyContent: null,
         lastStatusOutput: '',
         resourceMonitorInterval: null,
+        screenWs: null,
     };
 
     // --- Selectores de Elementos ---
@@ -27,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const serverControlBtns = document.querySelectorAll('.server-control-btn');
     const openFirewallBtn = document.getElementById('open-firewall-btn');
     const compartmentIdInput = document.getElementById('compartment-id');
+    const importPresetBtn = document.getElementById('import-preset-btn');
+    const exportPresetBtn = document.getElementById('export-preset-btn');
+    const presetFileInput = document.getElementById('preset-file-input');
     const logConsole = document.getElementById('log-console');
     const notificationArea = document.getElementById('server-status-notification');
     const cpuUsageEl = document.getElementById('cpu-usage');
@@ -64,7 +68,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const createBackupBtn = document.getElementById('create-backup-btn');
     const backupOutput = document.getElementById('backup-output');
     const backupsList = document.getElementById('backups-list');
-    const exportLatestLogBtn = document.getElementById('export-latest-log-btn');
+    const exportVpsLogBtn = document.getElementById('export-vps-log-btn');
+    const exportScreenLogBtn = document.getElementById('export-screen-log-btn');
+    const openScreenConsoleBtn = document.getElementById('open-screen-console-btn');
+    const screenModal = document.getElementById('screen-modal');
+    const screenCloseBtn = document.getElementById('screen-close-btn');
+    const screenConsole = document.getElementById('screen-console');
+    const screenSendBtn = document.getElementById('screen-send-btn');
+    const screenCommandInput = document.getElementById('screen-command-input');
+    const screenCmdBtns = document.querySelectorAll('.screen-cmd-btn');
+    const screenExportBtn = document.getElementById('screen-export-btn');
+    const modsGuideBtn = document.getElementById('mods-guide-btn');
 
     // --- Lógica de Modales ---
     const showModal = (title, content, footerContent = '') => {
@@ -84,13 +98,14 @@ document.addEventListener('DOMContentLoaded', () => {
     installServerBtn.addEventListener('click', async () => {
         const serverType = serverTypeSelect.value;
         const mcVersion = minecraftVersionSelect.value;
+        const properties = collectInstallerProperties();
         if (!serverType || !mcVersion) { installerOutput.textContent = 'Debe seleccionar tipo y versión.'; return; }
         installerOutput.textContent = ''; installServerBtn.disabled = true;
         try {
             const res = await fetch('http://localhost:3000/api/install-server', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties: {} })
+                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties })
             });
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
@@ -103,6 +118,18 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             installerOutput.textContent += `\nERROR: ${error.message}`;
         } finally { installServerBtn.disabled = false; }
+    });
+
+    serverTypeSelect.addEventListener('change', () => {
+        modsGuideBtn.classList.toggle('hidden', serverTypeSelect.value === 'vanilla');
+    });
+    modsGuideBtn.addEventListener('click', async () => {
+        try {
+            const data = await apiCall('/api/get-guide?file=guia_mods.md', {}, 'GET');
+            showModal('Guía de Mods', data.content);
+        } catch (error) {
+            showModal('Error', `<p class=\"text-red-400\">${error.message}</p>`);
+        }
     });
 
     // --- Lógica de API ---
@@ -148,19 +175,43 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadFile('connection-config.json', JSON.stringify(cfg, null, 2));
     });
     importBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0]; if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const cfg = JSON.parse(e.target.result);
-                vpsIpInput.value = cfg.vpsIp || '';
-                sshUserInput.value = cfg.sshUser || '';
-                if (cfg.sshKey) { state.sshKeyContent = cfg.sshKey; sshKeyFileName.textContent = 'Llave importada'; }
-            } catch { alert('Archivo de configuración inválido'); }
-        };
-        reader.readAsText(file);
-    });
+      fileInput.addEventListener('change', (event) => {
+          const file = event.target.files[0]; if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+              try {
+                  const cfg = JSON.parse(e.target.result);
+                  vpsIpInput.value = cfg.vpsIp || '';
+                  sshUserInput.value = cfg.sshUser || '';
+                  if (cfg.sshKey) { state.sshKeyContent = cfg.sshKey; sshKeyFileName.textContent = 'Llave importada'; }
+                  await connectToServer();
+              } catch { alert('Archivo de configuración inválido'); }
+          };
+          reader.readAsText(file);
+      });
+
+      importPresetBtn.addEventListener('click', () => presetFileInput.click());
+      presetFileInput.addEventListener('change', async (event) => {
+          const file = event.target.files[0]; if (!file) return;
+          try {
+              const cfg = JSON.parse(await file.text());
+              serverTypeSelect.value = cfg.serverType || 'vanilla';
+              await populateVersionDropdowns();
+              if (cfg.mcVersion) minecraftVersionSelect.value = cfg.mcVersion;
+              Object.entries(cfg.properties || {}).forEach(([k, v]) => {
+                  const el = document.getElementById(`prop-${k}`);
+                  if (el) el.value = v;
+              });
+          } catch { alert('Preset inválido'); }
+      });
+      exportPresetBtn.addEventListener('click', () => {
+          const preset = {
+              serverType: serverTypeSelect.value,
+              mcVersion: minecraftVersionSelect.value,
+              properties: collectInstallerProperties()
+          };
+          downloadFile('server-preset.json', JSON.stringify(preset, null, 2));
+      });
     guideBtns.forEach(btn => btn.addEventListener('click', async () => {
         const file = btn.dataset.file;
         try {
@@ -261,7 +312,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function downloadFile(filename, content) {
+      function collectInstallerProperties() {
+          const inputs = document.querySelectorAll('#installer-form-section [id^="prop-"]');
+          return Array.from(inputs).reduce((acc, el) => {
+              const key = el.id.replace('prop-', '');
+              acc[key] = el.value;
+              return acc;
+          }, {});
+      }
+
+      function downloadFile(filename, content) {
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), { href: url, download: filename });
@@ -269,16 +329,49 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url); a.remove();
     }
     function exportSessionLog() { downloadFile(`status-log-${new Date().toISOString()}.txt`, state.lastStatusOutput); }
-    async function exportLatestLog() {
+    async function exportVpsLog() {
         if (!state.connectionId) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/get-latest-log?connectionId=${state.connectionId}`);
-            const text = await res.text();
-            downloadFile('latest.log', text);
+            const data = await apiCall(`/api/get-vps-log?connectionId=${state.connectionId}`, {}, 'GET');
+            downloadFile('vps.log', data.logContent);
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
-    
-    exportLatestLogBtn.addEventListener('click', exportLatestLog);
+
+    async function exportScreenLog() {
+        if (!state.connectionId) return;
+        try {
+            const data = await apiCall(`/api/get-screen-log?connectionId=${state.connectionId}`, {}, 'GET');
+            downloadFile('minecraft.log', data.logContent);
+        } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
+    }
+
+    exportVpsLogBtn.addEventListener('click', exportVpsLog);
+    exportScreenLogBtn.addEventListener('click', exportScreenLog);
+    openScreenConsoleBtn.addEventListener('click', () => {
+        if (!state.connectionId) return;
+        screenConsole.textContent = '';
+        screenModal.classList.remove('hidden');
+        state.screenWs = new WebSocket(`ws://localhost:3000/ws/screen?connectionId=${state.connectionId}`);
+        state.screenWs.onmessage = (e) => {
+            screenConsole.textContent += e.data;
+            screenConsole.scrollTop = screenConsole.scrollHeight;
+        };
+        state.screenWs.onclose = () => { state.screenWs = null; };
+    });
+    screenCloseBtn.addEventListener('click', () => {
+        screenModal.classList.add('hidden');
+        if (state.screenWs) state.screenWs.close();
+    });
+    screenSendBtn.addEventListener('click', () => sendScreenCommand());
+    screenCommandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendScreenCommand(); });
+    screenCmdBtns.forEach(btn => btn.addEventListener('click', () => sendScreenCommand(btn.dataset.cmd)));
+    function sendScreenCommand(cmd) {
+        const command = cmd || screenCommandInput.value.trim();
+        if (!command || !state.screenWs) return;
+        state.screenWs.send(command + '\n');
+        screenCommandInput.value = '';
+    }
+    screenExportBtn.addEventListener('click', exportScreenLog);
     commandPresetBtns.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.command)));
     sendCommandBtn.addEventListener('click', () => sendCommand(commandInput.value.trim()));
     commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCommand(commandInput.value.trim()); });
@@ -320,8 +413,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch { minecraftVersionSelect.innerHTML = '<option value="">Error</option>'; }
     }
 
-    openFirewallBtn.addEventListener('click', async () => {
-        const compartmentId = compartmentIdInput.value.trim();
+      openFirewallBtn.addEventListener('click', async () => {
+          const compartmentId = compartmentIdInput.value.trim();
         if (!compartmentId) { showModal('Firewall', '<p class="text-red-400">Debes proporcionar el OCID del compartimento.</p>'); return; }
         showModal('Abriendo puertos', '<p>Configurando firewall en OCI y VPS...</p>');
         try {
@@ -336,9 +429,38 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
-    });
+      });
 
-    // --- Gestión de jugadores ---
+      editPropertiesBtn.addEventListener('click', async () => {
+          propertiesModal.classList.remove('hidden');
+          propertiesBody.innerHTML = '<p>Cargando...</p>';
+          try {
+              const data = await apiCall(`/api/get-properties?connectionId=${state.connectionId}`, {}, 'GET');
+              propertiesBody.innerHTML = '';
+              Object.entries(data.properties || {}).forEach(([key, value]) => {
+                  const div = document.createElement('div');
+                  div.innerHTML = `<label for="propedit-${key}" class="text-sm">${key}</label><input id="propedit-${key}" data-key="${key}" value="${value}" class="w-full bg-gray-700 text-sm p-2 rounded">`;
+                  propertiesBody.appendChild(div);
+              });
+          } catch (error) {
+              propertiesBody.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+          }
+      });
+      propertiesCloseBtn.addEventListener('click', () => propertiesModal.classList.add('hidden'));
+      savePropertiesBtn.addEventListener('click', async () => {
+          const inputs = propertiesBody.querySelectorAll('input');
+          const props = {};
+          inputs.forEach(i => props[i.dataset.key] = i.value);
+          try {
+              await apiCall('/api/save-properties', { connectionId: state.connectionId, properties: props });
+              propertiesModal.classList.add('hidden');
+              showModal('Propiedades', '<p>server.properties actualizado.</p>');
+          } catch (err) {
+              alert(err.message);
+          }
+      });
+
+      // --- Gestión de jugadores ---
     managePlayersBtn.addEventListener('click', loadPlayersModal);
     playersCloseBtn.addEventListener('click', () => playersModal.classList.add('hidden'));
     async function loadPlayersModal() {

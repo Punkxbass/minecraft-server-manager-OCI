@@ -95,7 +95,11 @@
                 <div class="lg:col-span-2 bg-gray-800 rounded-2xl p-6 flex flex-col">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xl font-bold text-white">Consola de Logs en Vivo</h3>
-                        <button id="export-latest-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar latest.log</button>
+                        <div class="flex gap-2">
+                            <button id="open-screen-console-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-sm">Consola interactiva</button>
+                            <button id="export-vps-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Log VPS</button>
+                            <button id="export-screen-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Log Minecraft</button>
+                        </div>
                     </div>
                     <div id="log-console" class="log-console bg-black rounded-lg p-4 font-mono text-sm text-green-400 overflow-y-auto whitespace-pre-wrap flex-grow"></div>
                     <div class="mt-4 flex gap-2">
@@ -142,6 +146,7 @@
                                 <option value="paper">Paper (Alto Rendimiento)</option>
                                 <option value="fabric">Fabric (Mods)</option>
                             </select>
+                            <button id="mods-guide-btn" class="mt-2 hidden bg-gray-600 hover:bg-gray-700 text-white text-xs py-1 px-2 rounded">Guía de Mods</button>
                         </div>
                         <div>
                             <label for="minecraft-version" class="block mb-2 text-sm font-medium text-gray-300">Versión de Minecraft</label>
@@ -285,6 +290,29 @@
                 <div id="backup-output" class="bg-black rounded-lg p-4 font-mono text-sm text-gray-300 whitespace-pre-wrap hidden mb-4 max-h-48 overflow-y-auto"></div>
                 <h4 class="text-lg font-bold mb-3">Copias Disponibles</h4>
                 <ul id="backups-list" class="bg-gray-900/50 rounded-lg p-2"></ul>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[95vh] flex">
+            <div class="w-1/4 border-r border-gray-700 p-4 space-y-2">
+                <h4 class="text-white font-bold mb-2">Comandos</h4>
+                <button class="screen-cmd-btn w-full bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 px-2 rounded" data-cmd="list">list</button>
+                <button class="screen-cmd-btn w-full bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 px-2 rounded" data-cmd="say Hola">say</button>
+                <button class="screen-cmd-btn w-full bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 px-2 rounded" data-cmd="time set day">time day</button>
+                <button id="screen-export-btn" class="w-full bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 px-2 rounded">Exportar log</button>
+            </div>
+            <div class="flex-1 flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b border-gray-700">
+                    <h3 class="text-xl font-bold text-white">Consola Minecraft</h3>
+                    <button id="screen-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+                </div>
+                <div id="screen-console" class="flex-1 bg-black text-green-400 p-4 overflow-y-auto font-mono text-sm whitespace-pre-wrap"></div>
+                <div class="p-4 flex gap-2">
+                    <input type="text" id="screen-command-input" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="Escribe un comando...">
+                    <button id="screen-send-btn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Enviar</button>
+                </div>
             </div>
         </div>
     </div>

@@ -5,13 +5,16 @@ const cors = require('cors');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const http = require('http');
+const { WebSocketServer } = require('ws');
 const { Client } = require('ssh2');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const marked = require('marked');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const port = 3000;
 const execAsync = promisify(exec);
+const server = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true });
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -48,12 +51,13 @@ function execSshCommand(conn, command, streamRes = null) {
 // =============================
 app.get('/api/get-guide', async (req, res) => {
   const { file } = req.query;
-  if (!file || !['guia_vps_oci.md', 'guia_oci_cli.md', 'guia_minecraft_manual.md'].includes(file)) {
+  if (!file || !['guia_vps_oci.md', 'guia_oci_cli.md', 'guia_minecraft_manual.md', 'guia_mods.md'].includes(file)) {
     return res.status(400).json({ message: 'Archivo de guía no válido.' });
   }
   try {
     const filePath = path.join(__dirname, file);
     const content = await fs.readFile(filePath, 'utf-8');
+    const { marked } = await import('marked');
     const htmlContent = marked.parse(content);
     res.json({ success: true, content: htmlContent });
   } catch (err) {
@@ -112,7 +116,7 @@ app.post('/api/disconnect', (req, res) => {
 // =============================
 // Instalación del servidor
 // =============================
-app.post('/api/install-server', (req, res) => {
+app.post('/api/install-server', async (req, res) => {
   const { connectionId, serverType, mcVersion, properties } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
@@ -121,95 +125,26 @@ app.post('/api/install-server', (req, res) => {
 
   const propertiesString = Object.entries(properties || {})
     .map(([k, v]) => `${k.replace(/-/g, '.')}=${v}`)
-    .join('\\n');
+    .join('\n');
 
-  const installScript = `
-#!/bin/bash
-set -e
-exec > >(tee /dev/tty) 2>&1
+  const propsB64 = Buffer.from(propertiesString).toString('base64');
 
-SERVER_DIR=${SERVER_PATH_BASE(sshData.sshUser)}
-JAR_NAME="server.jar"
-
-echo "--- Iniciando Instalación (Tipo: ${serverType}, Versión: ${mcVersion}) ---"
-echo "Paso 1: Limpiando instalación anterior..."
-sudo systemctl stop minecraft &>/dev/null || echo "Info: Servicio no activo."
-sudo systemctl disable minecraft &>/dev/null || echo "Info: Servicio no habilitado."
-sudo rm -f /etc/systemd/system/minecraft.service
-sudo systemctl daemon-reload
-sudo systemctl reset-failed
-rm -rf $SERVER_DIR
-mkdir -p $SERVER_DIR
-cd $SERVER_DIR
-echo "Limpieza completada."
-
-echo "Paso 2: Instalando dependencias (Java 21, wget, jq, screen, ufw)..."
-sudo apt-get update > /dev/null
-sudo apt-get install -y openjdk-21-jdk wget jq screen ufw > /dev/null
-echo "Dependencias instaladas."
-
-echo "Paso 2.5: Configurando firewall del sistema operativo (UFW)..."
-sudo ufw allow 22/tcp
-sudo ufw allow 25565/tcp
-sudo ufw allow 25565/udp
-sudo ufw --force enable
-echo "Firewall del sistema operativo configurado y activado."
-
-echo "Paso 3: Descargando archivos del servidor..."
-if [ "${serverType}" == "vanilla" ]; then
-  MANIFEST_URL=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r ".versions[] | select(.id == \"${mcVersion}\") | .url")
-  DOWNLOAD_URL=$(curl -s $MANIFEST_URL | jq -r ".downloads.server.url")
-  wget -q --show-progress -O server.jar $DOWNLOAD_URL
-elif [ "${serverType}" == "paper" ]; then
-  BUILD=$(curl -s https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds | jq -r '.builds[-1].build')
-  DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/${BUILD}/downloads/paper-${mcVersion}-${BUILD}.jar"
-  wget -q --show-progress -O server.jar "$DOWNLOAD_URL"
-elif [ "${serverType}" == "fabric" ]; then
-  FABRIC_INSTALLER_URL=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" | jq -r '.[0].url')
-  wget -q --show-progress -O fabric-installer.jar "$FABRIC_INSTALLER_URL"
-  java -jar fabric-installer.jar server -mcversion ${mcVersion} -downloadMinecraft
-  JAR_NAME="fabric-server-launch.jar"
-fi
-echo "Descarga completada."
-
-echo "Paso 4: Configurando archivos del servidor..."
-echo "eula=true" > eula.txt
-echo -e "${propertiesString}" > server.properties
-echo "enable-rcon=false" >> server.properties
-
-echo "Paso 5: Creando script de inicio (start.sh)..."
-cat > start.sh << '_SCRIPT'
-#!/bin/bash
-java -Xms4G -Xmx20G -jar \${JAR_NAME} nogui
-_SCRIPT
-chmod +x start.sh
-
-echo "Paso 6: Creando servicio de systemd con screen..."
-sudo tee /etc/systemd/system/minecraft.service > /dev/null << '_SERVICE'
-[Unit]
-Description=Minecraft Server (${serverType} ${mcVersion})
-After=network.target
-[Service]
-User=${sshData.sshUser}
-Nice=1
-KillMode=none
-SuccessExitStatus=0 1
-WorkingDirectory=$SERVER_DIR
-ExecStart=/usr/bin/screen -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
-ExecStop=/usr/bin/screen -p 0 -S minecraft -X eval "stuff \"stop\\015\""
-[Install]
-WantedBy=multi-user.target
-_SERVICE
-
-sudo systemctl daemon-reload
-sudo systemctl enable minecraft
-echo "Servicio creado y habilitado."
-echo "--- Instalación Finalizada ---"
-`;
-
-  execSshCommand(sshData.conn, installScript, res).catch(err => {
-    if (!res.writableEnded) res.end(`\nERROR al iniciar el script: ${err.message}`);
-  });
+  try {
+    const template = await fs.readFile(path.join(__dirname, 'scripts', 'install_server.sh'), 'utf-8');
+    const env = [
+      `SERVER_DIR="${SERVER_PATH_BASE(sshData.sshUser)}"`,
+      `SERVER_TYPE="${serverType}"`,
+      `MC_VERSION="${mcVersion}"`,
+      `SSH_USER="${sshData.sshUser}"`,
+      `PROPERTIES_B64="${propsB64}"`
+    ].join('\n');
+    const script = env + '\n' + template;
+    execSshCommand(sshData.conn, script, res).catch(err => {
+      if (!res.writableEnded) res.end(`\nERROR al iniciar el script: ${err.message}`);
+    });
+  } catch (err) {
+    if (!res.writableEnded) res.end(`ERROR al preparar el script: ${err.message}`);
+  }
 });
 
 // =============================
@@ -270,7 +205,20 @@ app.post('/api/send-command', async (req, res) => {
 // =============================
 // Logs y Recursos
 // =============================
-app.get('/api/get-latest-log', async (req, res) => {
+app.get('/api/get-vps-log', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/console.log`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, `cat ${logPath}`);
+    res.json({ success: true, logContent: output });
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo leer el log: ${error.message}` });
+  }
+});
+
+app.get('/api/get-screen-log', async (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
@@ -289,15 +237,18 @@ app.get('/api/live-logs', (req, res) => {
   if (!sshData) return res.status(400).end('Conexión no encontrada.');
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
-  const command = `tail -F -n 50 ${SERVER_PATH_BASE(sshData.sshUser)}/logs/latest.log`;
+  const basePath = SERVER_PATH_BASE(sshData.sshUser);
+  const command = `if [ -f ${basePath}/console.log ]; then tail -n 0 -F ${basePath}/console.log; else tail -n 0 -F ${basePath}/logs/latest.log; fi`;
   sshData.conn.exec(command, (err, stream) => {
     if (err) {
       res.write(`data: [ERROR] No se pudo acceder al archivo de logs.\n\n`);
       res.end();
       return;
     }
-    stream.on('data', data => data.toString().split('\n').forEach(line => line.trim() && res.write(`data: ${line}\n\n`)))
-          .stderr.on('data', data => res.write(`data: [ERROR LOGS]: ${data.toString().trim()}\n\n`))
+    stream.on('data', data => {
+            data.toString().split(/\r?\n/).forEach(line => res.write(`data: ${line}\n\n`));
+          })
+          .stderr.on('data', data => res.write(`data: [ERROR LOGS]: ${data.toString()}\n\n`))
           .on('close', () => res.end());
     req.on('close', () => { clearInterval(heartbeat); stream.close(); });
   });
@@ -616,4 +567,27 @@ process.on('SIGINT', () => {
   process.exit();
 });
 
-app.listen(port, () => console.log(`Servidor escuchando en http://localhost:${port}`));
+// WebSocket para acceder a la sesión screen de Minecraft
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === '/ws/screen') {
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, url.searchParams));
+  } else {
+    socket.destroy();
+  }
+});
+
+wss.on('connection', (ws, params) => {
+  const connectionId = params.get('connectionId');
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return ws.close();
+  sshData.conn.exec('screen -r minecraft', { pty: true }, (err, stream) => {
+    if (err) return ws.close();
+    stream.on('data', data => ws.send(data.toString()));
+    stream.stderr.on('data', data => ws.send(data.toString()));
+    ws.on('message', msg => stream.write(msg));
+    ws.on('close', () => stream.write('\u0001d'));
+  });
+});
+
+server.listen(port, () => console.log(`Servidor escuchando en http://localhost:${port}`));
