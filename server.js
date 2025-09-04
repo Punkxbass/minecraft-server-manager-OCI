@@ -17,6 +17,19 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
+const rootDir = '/home/ubuntu';
+
+function resolveSafePath(requestedPath = '') {
+  const safePath = path.posix
+    .normalize('/' + requestedPath)
+    .replace(/^\/+/, '');
+  const fullPath = path.join(rootDir, safePath);
+  if (!fullPath.startsWith(rootDir)) {
+    throw new Error('Ruta no permitida.');
+  }
+  return fullPath;
+}
+
 // =============================
 // Utilidades
 // =============================
@@ -193,7 +206,7 @@ sudo ufw --force enable
 log "Firewall del sistema operativo configurado y activado."
 
 log "Paso 2.6: Configurando permisos de reinicio..."
-echo "${sshData.sshUser} ALL=(ALL) NOPASSWD: /sbin/reboot" | sudo tee /etc/sudoers.d/minecraft-reboot >/dev/null
+echo "${sshData.sshUser} ALL=(ALL) NOPASSWD: /sbin/reboot" | sudo tee /etc/sudoers.d/99-minecraft-manager-reboot >/dev/null
 log "Permisos de reinicio configurados."
 
 log "Paso 3/6: Descargando archivos del servidor (esto puede tardar)..."
@@ -214,9 +227,21 @@ fi
 log "Descarga completada."
 
 log "Paso 4/6: Configurando archivos del servidor..."
-echo "eula=true" > eula.txt
 echo -e "${propertiesString}" > server.properties
 echo "enable-rcon=false" >> server.properties
+
+log "Paso 4.5/6: Aceptando el EULA de Minecraft..."
+java -Xmx1024M -Xms1024M -jar \${JAR_NAME} nogui &
+PID=$!
+sleep 15
+kill $PID || true
+
+if [ -f "eula.txt" ]; then
+  sed -i 's/eula=false/eula=true/g' eula.txt
+  log "EULA aceptado."
+else
+  log "No se pudo encontrar eula.txt. El servidor podría no iniciarse."
+fi
 
 log "Paso 5/6: Creando script de inicio (start.sh)..."
 cat > start.sh << _SCRIPT
@@ -817,6 +842,51 @@ app.post('/api/clear-console', async (req, res) => {
   }
 });
 
+// =============================
+// Explorador de archivos
+// =============================
+app.get('/api/files', async (req, res) => {
+  try {
+    const dirPath = resolveSafePath(req.query.path || '');
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const files = await Promise.all(entries.map(async entry => {
+      const full = path.join(dirPath, entry.name);
+      const stats = await fs.stat(full);
+      return { name: entry.name, size: stats.size, isDirectory: entry.isDirectory() };
+    }));
+    res.json({ success: true, files });
+  } catch (err) {
+    res.status(err.message === 'Ruta no permitida.' ? 400 : 500).json({ message: err.message });
+  }
+});
+
+app.get('/api/files/download', async (req, res) => {
+  let filePath;
+  try {
+    filePath = resolveSafePath(req.query.path || '');
+    await fs.access(filePath);
+    res.download(filePath);
+  } catch (err) {
+    const status = err.code === 'ENOENT' ? 404 : 400;
+    res.status(status).json({ message: status === 404 ? 'Archivo no encontrado.' : err.message });
+  }
+});
+
+app.delete('/api/files', async (req, res) => {
+  try {
+    const target = resolveSafePath(req.query.path || '');
+    const stats = await fs.lstat(target);
+    if (stats.isDirectory()) {
+      await fs.rm(target, { recursive: true, force: true });
+    } else {
+      await fs.unlink(target);
+    }
+    res.json({ success: true, message: 'Elemento eliminado.' });
+  } catch (err) {
+    res.status(err.message === 'Ruta no permitida.' ? 400 : 500).json({ message: err.message });
+  }
+});
+
 app.post('/api/reboot-vps', async (req, res) => {
   const { connectionId } = req.body;
   const sshData = sshConnections.get(connectionId);
@@ -836,19 +906,18 @@ app.post('/api/deep-clean', async (req, res) => {
   const { connectionId } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const script = `
-echo "--- Limpieza Profunda ---"
-sudo systemctl stop minecraft || echo "Info: Servicio no activo."
-sudo systemctl disable minecraft || echo "Info: Servicio no habilitado."
-sudo rm -f /etc/systemd/system/minecraft.service
-sudo systemctl daemon-reload
-sudo systemctl reset-failed
-rm -rf ${SERVER_PATH_BASE(sshData.sshUser)}
-echo "Carpeta del servidor eliminada."
-echo "--- Limpieza Completada ---"
-`;
   try {
-    const { output, error } = await execSshCommand(sshData.conn, script);
+    const uninstallScript = (await fs.readFile(path.join(__dirname, 'scripts', 'uninstall.sh'), 'utf8'))
+      .replace(/\$\{/g, '\\${');
+    const remoteScript = `
+cat <<'EOF_UNINSTALL' > /home/${sshData.sshUser}/uninstall.sh
+${uninstallScript}
+EOF_UNINSTALL
+chmod +x /home/${sshData.sshUser}/uninstall.sh
+sudo /home/${sshData.sshUser}/uninstall.sh
+rm /home/${sshData.sshUser}/uninstall.sh
+`;
+    const { output, error } = await execSshCommand(sshData.conn, remoteScript);
     res.json({ success: true, output: output || error });
   } catch (error) {
     res.status(500).json({ message: `Error en limpieza: ${error.message}` });
