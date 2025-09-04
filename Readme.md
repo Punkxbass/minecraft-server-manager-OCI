@@ -56,6 +56,25 @@ npm start
 
 El servidor Express quedará escuchando en `http://localhost:3000`. Abre `index.html` en tu navegador para usar la interfaz.
 
+### Instalación desde cero en Windows
+
+1. Instala [Git](https://git-scm.com/download/win) y [Node.js](https://nodejs.org/) (incluye npm).
+2. Abre **PowerShell** y clona el repositorio:
+   ```powershell
+   git clone https://github.com/Punkxbass/minecraft-server-manager-OCI.git
+   cd minecraft-server-manager-OCI
+   ```
+3. Instala las dependencias:
+   ```powershell
+   npm install
+   ```
+4. Inicia el backend:
+   ```powershell
+   npm start
+   ```
+5. Abre `index.html` con tu navegador (doble clic o arrastrándolo a una pestaña). La aplicación se conectará al backend en `http://localhost:3000`.
+
+
 ### Ejecutar desde GitHub
 
 La interfaz web (`index.html` y `script.js`) puede publicarse en **GitHub Pages** para probarla sin descarga local. Para ejecutar el backend se recomienda usar **GitHub Codespaces** o un contenedor remoto donde se ejecute `npm start`.
@@ -63,6 +82,6 @@ La interfaz web (`index.html` y `script.js`) puede publicarse en **GitHub Pages*
 ## Manual rápido de funciones
 
 - **Instalación automática:** soporta servidores *Vanilla*, *Paper* y *Fabric*. Al elegir Fabric aparece un botón con una guía para instalar mods.
-- **Consola de logs en vivo:** muestra la salida real del proceso de `screen`. Desde la misma vista se pueden exportar `latest.log` o el `screenlog` y abrir una consola interactiva.
+- **Consola de logs en vivo:** muestra la salida real del proceso de `screen`. Desde la misma vista se pueden exportar `latest.log` o el `screen.log` y abrir una consola interactiva.
 - **Consola interactiva:** botón "Abrir consola" abre una ventana con comandos comunes y opción para exportar el log de `screen` sin salir.
 - **Gestión completa:** control del servicio, edición de `server.properties`, administración de jugadores, backups, y apertura de firewall en VPS y OCI.

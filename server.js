@@ -195,7 +195,7 @@ Nice=1
 KillMode=none
 SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
-ExecStart=/usr/bin/screen -L -Logfile $SERVER_DIR/screenlog.0 -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
+ExecStart=/usr/bin/screen -L -Logfile $SERVER_DIR/screen.log -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
 ExecStop=/usr/bin/screen -p 0 -S minecraft -X eval "stuff \"stop\\015\""
 [Install]
 WantedBy=multi-user.target
@@ -287,12 +287,33 @@ app.get('/api/get-screen-log', async (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/screenlog.0`;
+  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/screen.log`;
   try {
     const { output } = await execSshCommand(sshData.conn, `cat ${logPath}`);
     res.json({ success: true, logContent: output });
   } catch (error) {
     res.status(500).json({ message: `No se pudo leer el log de screen: ${error.message}` });
+  }
+});
+
+app.get('/api/export-server', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const serverDir = SERVER_PATH_BASE(sshData.sshUser);
+  const archive = `${serverDir}/server-backup.tar.gz`;
+  try {
+    await execSshCommand(sshData.conn, `tar -czf ${archive} -C ${serverDir} .`);
+    sshData.conn.sftp((err, sftp) => {
+      if (err) return res.status(500).json({ message: 'Error SFTP.' });
+      res.setHeader('Content-Type', 'application/gzip');
+      res.setHeader('Content-Disposition', 'attachment; filename=server-backup.tar.gz');
+      const stream = sftp.createReadStream(archive);
+      stream.on('close', () => sftp.unlink(archive, () => {}));
+      stream.pipe(res);
+    });
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo exportar el servidor: ${error.message}` });
   }
 });
 
@@ -302,7 +323,7 @@ app.get('/api/live-logs', (req, res) => {
   if (!sshData) return res.status(400).end('Conexión no encontrada.');
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
-  const command = `tail -F -n 50 ${SERVER_PATH_BASE(sshData.sshUser)}/screenlog.0`;
+  const command = `tail -F -n 50 ${SERVER_PATH_BASE(sshData.sshUser)}/screen.log`;
   sshData.conn.exec(command, (err, stream) => {
     if (err) {
       res.write(`data: [ERROR] No se pudo acceder al archivo de logs.\n\n`);
