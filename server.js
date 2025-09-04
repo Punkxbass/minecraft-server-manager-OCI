@@ -162,7 +162,7 @@ if [ "${serverType}" == "vanilla" ]; then
   wget -q --show-progress -O server.jar $DOWNLOAD_URL
 elif [ "${serverType}" == "paper" ]; then
   BUILD=$(curl -s https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds | jq -r '.builds[-1].build')
-  DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/${BUILD}/downloads/paper-${mcVersion}-${BUILD}.jar"
+  DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/\${BUILD}/downloads/paper-${mcVersion}-\${BUILD}.jar"
   wget -q --show-progress -O server.jar "$DOWNLOAD_URL"
 elif [ "${serverType}" == "fabric" ]; then
   FABRIC_INSTALLER_URL=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" | jq -r '.[0].url')
