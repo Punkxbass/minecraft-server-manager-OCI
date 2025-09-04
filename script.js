@@ -412,8 +412,12 @@ document.addEventListener('DOMContentLoaded', () => {
     commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(commandInput.value.trim()); commandInput.value=''; } });
     function sendCommand(command) {
         if (!command) return;
+        const p = document.createElement('p');
+        p.textContent = `> ${command}`;
+        screenConsoleLog.appendChild(p);
+        screenConsoleLog.scrollTop = screenConsoleLog.scrollHeight;
         apiCall('/api/send-command', { connectionId: state.connectionId, command }).catch(err => {
-            showModal('Error', `<p class=\"text-red-400\">${err.message}</p>`);
+            showModal('Error', `<p class=\\"text-red-400\\">${err.message}</p>`);
         });
     }
 
