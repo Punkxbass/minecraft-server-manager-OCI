@@ -125,10 +125,9 @@ app.post('/api/install-server', (req, res) => {
       .map(([k, v]) => `${k.replace(/-/g, '.')}=${v}`)
       .join('\\n');
 
-    const installScript = `
+const installScript = `
 #!/bin/bash
 set -e
-exec > >(tee /dev/tty) 2>&1
 
 SERVER_DIR=${SERVER_PATH_BASE(sshData.sshUser)}
 JAR_NAME="server.jar"
@@ -161,7 +160,7 @@ echo "Paso 3: Descargando archivos del servidor..."
 if [ "${serverType}" == "vanilla" ]; then
   MANIFEST_URL=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r ".versions[] | select(.id == \"${mcVersion}\") | .url")
   DOWNLOAD_URL=$(curl -s $MANIFEST_URL | jq -r ".downloads.server.url")
-  wget -q --show-progress -O server.jar $DOWNLOAD_URL
+  wget -q --show-progress -O server.jar "$DOWNLOAD_URL"
 elif [ "${serverType}" == "paper" ]; then
   BUILD=$(curl -s https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds | jq -r '.builds[-1].build')
   DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/${BUILD}/downloads/paper-${mcVersion}-${BUILD}.jar"

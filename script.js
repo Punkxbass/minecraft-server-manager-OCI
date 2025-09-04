@@ -58,6 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const whitelistList = document.getElementById('whitelist-list');
     const addOpBtn = document.getElementById('add-op-btn');
     const addWhitelistBtn = document.getElementById('add-whitelist-btn');
+    const opPlayerNameInput = document.getElementById('op-player-name');
+    const whitelistPlayerNameInput = document.getElementById('whitelist-player-name');
     const manageBackupsBtn = document.getElementById('manage-backups-btn');
     const backupsModal = document.getElementById('backups-modal');
     const backupsCloseBtn = document.getElementById('backups-close-btn');
@@ -65,6 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupOutput = document.getElementById('backup-output');
     const backupsList = document.getElementById('backups-list');
     const exportLatestLogBtn = document.getElementById('export-latest-log-btn');
+    const importPresetBtn = document.getElementById('import-preset-btn');
+    const exportPresetBtn = document.getElementById('export-preset-btn');
+    const presetFileInput = document.getElementById('preset-file-input');
 
     // --- Lógica de Modales ---
     const showModal = (title, content, footerContent = '') => {
@@ -80,7 +85,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const showInstallerModal = () => installerModal.classList.remove('hidden');
     const hideInstallerModal = () => installerModal.classList.add('hidden');
     openInstallerBtn.addEventListener('click', () => { populateVersionDropdowns(); showInstallerModal(); });
+    serverTypeSelect.addEventListener('change', populateVersionDropdowns);
     installerCloseBtn.addEventListener('click', hideInstallerModal);
+    exportPresetBtn.addEventListener('click', () => {
+        const preset = { serverType: serverTypeSelect.value, mcVersion: minecraftVersionSelect.value, properties: collectInstallProperties() };
+        downloadFile('install-preset.json', JSON.stringify(preset, null, 2));
+    });
+    importPresetBtn.addEventListener('click', () => presetFileInput.click());
+    presetFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const preset = JSON.parse(ev.target.result);
+                if (preset.serverType) serverTypeSelect.value = preset.serverType;
+                if (preset.mcVersion) minecraftVersionSelect.value = preset.mcVersion;
+                if (preset.properties) {
+                    Object.entries(preset.properties).forEach(([k, v]) => {
+                        const el = document.getElementById(`prop-${k}`);
+                        if (el) el.value = v;
+                    });
+                }
+            } catch { alert('Preset inválido'); }
+        };
+        reader.readAsText(file);
+    });
     installServerBtn.addEventListener('click', async () => {
         const serverType = serverTypeSelect.value;
         const mcVersion = minecraftVersionSelect.value;
@@ -90,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/install-server', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties: {} })
+                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties: collectInstallProperties() })
             });
             if (!res.ok || !res.body) throw new Error('Instalación fallida');
             const reader = res.body.getReader();
@@ -274,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.connectionId) return;
         try {
             const res = await fetch(`/api/get-latest-log?connectionId=${state.connectionId}`);
+            if (!res.ok) throw new Error('No se pudo obtener el log');
             const text = await res.text();
             downloadFile('latest.log', text);
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
@@ -283,6 +314,53 @@ document.addEventListener('DOMContentLoaded', () => {
     commandPresetBtns.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.command)));
     sendCommandBtn.addEventListener('click', () => sendCommand(commandInput.value.trim()));
     commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCommand(commandInput.value.trim()); });
+
+    // --- server.properties ---
+    editPropertiesBtn.addEventListener('click', openPropertiesModal);
+    propertiesCloseBtn.addEventListener('click', () => propertiesModal.classList.add('hidden'));
+    savePropertiesBtn.addEventListener('click', saveProperties);
+
+    async function openPropertiesModal() {
+        if (!state.connectionId) return;
+        propertiesBody.innerHTML = '<p>Cargando...</p>';
+        propertiesModal.classList.remove('hidden');
+        try {
+            const data = await apiCall(`/api/get-properties?connectionId=${state.connectionId}`, {}, 'GET');
+            const entries = Object.entries(data.properties || {});
+            propertiesBody.innerHTML = entries.map(([k,v]) => (
+                `<label class="block mb-2"><span class="text-sm text-gray-300">${k}</span>`+
+                `<input name="${k}" value="${v}" class="w-full p-1 rounded bg-gray-700 text-white"/></label>`
+            )).join('');
+        } catch (error) {
+            propertiesBody.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+        }
+    }
+
+    async function saveProperties() {
+        const inputs = propertiesBody.querySelectorAll('input');
+        const props = {};
+        inputs.forEach(i => props[i.name] = i.value);
+        try {
+            await apiCall('/api/save-properties', { connectionId: state.connectionId, properties: props });
+            propertiesModal.classList.add('hidden');
+        } catch (error) {
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
+        }
+    }
+
+    function collectInstallProperties() {
+        return {
+            'server-name': document.getElementById('prop-server-name').value,
+            'motd': document.getElementById('prop-motd').value,
+            'gamemode': document.getElementById('prop-gamemode').value,
+            'difficulty': document.getElementById('prop-difficulty').value,
+            'max-players': document.getElementById('prop-max-players').value,
+            'pvp': document.getElementById('prop-pvp').value,
+            'allow-flight': document.getElementById('prop-allow-flight').value,
+            'white-list': document.getElementById('prop-white-list').value,
+            'enable-command-block': document.getElementById('prop-enable-command-block').value,
+        };
+    }
     function sendCommand(command) {
         if (!command) return;
         commandInput.value = '';
@@ -331,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.connectionId) {
                 const res = await fetch('/api/open-ufw', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ connectionId: state.connectionId }) });
                 const text = await res.text();
+                if (!res.ok) throw new Error(text || 'Error al configurar UFW');
                 message += `<pre class="bg-black p-2 rounded mt-2 whitespace-pre-wrap">${text}</pre>`;
             }
             showModal('Firewall', message);
@@ -379,16 +458,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
     }
     addOpBtn.addEventListener('click', async () => {
-        const username = prompt('Nombre del jugador a agregar como OP:');
+        const username = opPlayerNameInput.value.trim();
         if (!username) return;
-        try { await apiCall('/api/manage-player', { connectionId: state.connectionId, list: 'ops', action: 'add', username }); loadPlayersModal(); }
-        catch (err) { alert(err.message); }
+        try {
+            await apiCall('/api/manage-player', { connectionId: state.connectionId, list: 'ops', action: 'add', username });
+            opPlayerNameInput.value = '';
+            loadPlayersModal();
+        } catch (err) { alert(err.message); }
     });
     addWhitelistBtn.addEventListener('click', async () => {
-        const username = prompt('Nombre del jugador a agregar a la whitelist:');
+        const username = whitelistPlayerNameInput.value.trim();
         if (!username) return;
-        try { await apiCall('/api/manage-player', { connectionId: state.connectionId, list: 'whitelist', action: 'add', username }); loadPlayersModal(); }
-        catch (err) { alert(err.message); }
+        try {
+            await apiCall('/api/manage-player', { connectionId: state.connectionId, list: 'whitelist', action: 'add', username });
+            whitelistPlayerNameInput.value = '';
+            loadPlayersModal();
+        } catch (err) { alert(err.message); }
     });
 
     // --- Copias de seguridad ---
@@ -398,6 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function openBackupsModal() {
         backupsModal.classList.remove('hidden');
         backupOutput.textContent = '';
+        backupOutput.classList.add('hidden');
         await refreshBackupList();
     }
     async function refreshBackupList() {
@@ -428,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
             });
             if (!res.ok || !res.body) throw new Error('Operación de copia fallida');
+            backupOutput.classList.remove('hidden');
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let done = false;
