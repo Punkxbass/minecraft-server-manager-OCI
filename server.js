@@ -196,6 +196,7 @@ cat << _SERVICE > minecraft.service.tmp
 [Unit]
 Description=Minecraft Server (${serverType} ${mcVersion})
 After=network.target
+
 [Service]
 User=${sshData.sshUser}
 Nice=1
@@ -203,9 +204,11 @@ KillMode=control-group
 SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
 Type=forking
+PIDFile=/run/minecraft.pid
 RemainAfterExit=yes
-ExecStart=/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
-ExecStop=/usr/bin/screen -S minecraft -p 0 -X eval "stuff \"stop\\015\""
+ExecStart=/bin/bash -c '/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh; sleep 1; screen -list | grep "\\.minecraft" | head -n1 | cut -d. -f1 | tr -d "\\t" > /run/minecraft.pid'
+ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -p 0 -X eval "stuff \\"stop\\015\""; sleep 5; /usr/bin/screen -S minecraft -X quit'
+
 [Install]
 WantedBy=multi-user.target
 _SERVICE

@@ -119,16 +119,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     const chunk = decoder.decode(value);
                     installerOutput.textContent += chunk;
                     logText += chunk;
-                    const match = chunk.match(/__INSTALL_DONE__ IP=(\S+) PORT=(\S+) NAME=(.*?) MOTD=(.*)/);
-                    if (match) {
-                        installResult = { ip: match[1], port: match[2], name: match[3], motd: match[4] };
+                    if (chunk.includes('__INSTALL_DONE__')) {
+                        const ip = (chunk.match(/IP=([^\s]+)/) || [])[1] || vpsIpInput.value;
+                        const port = (chunk.match(/PORT=([^\s]+)/) || [])[1] || '25565';
+                        const name = (chunk.match(/NAME=([^\s]*)/) || [])[1] || '';
+                        const motdMatch = chunk.match(/MOTD=(.*)/);
+                        const motd = motdMatch ? motdMatch[1] : '';
+                        installResult = { ip, port, name, motd };
                     }
                 }
                 done = finished;
             }
             hideInstallerModal();
             if (installResult) {
-                notificationArea.innerHTML = `IP: ${installResult.ip} | Puerto: ${installResult.port} | Nombre: ${installResult.name} | MOTD: ${installResult.motd}`;
+                await checkServerStatus();
                 showModal('Instalación completada', `<p>El servidor se ha instalado e iniciado correctamente.</p><p>IP: ${installResult.ip}</p><p>Puerto: ${installResult.port}</p><p>Nombre: ${installResult.name}</p><p>MOTD: ${installResult.motd}</p>`);
             } else {
                 showModal('Instalación fallida', '<p>Ocurrió un error durante la instalación. Se generó un log.</p>',
@@ -410,14 +414,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     sendCommandBtn.addEventListener('click', () => { sendCommand(commandInput.value.trim()); commandInput.value=''; });
     commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(commandInput.value.trim()); commandInput.value=''; } });
+
     function sendCommand(command) {
         if (!command) return;
         const p = document.createElement('p');
         p.textContent = `> ${command}`;
-        screenConsoleLog.appendChild(p);
-        screenConsoleLog.scrollTop = screenConsoleLog.scrollHeight;
+        if (screenConsoleModal.classList.contains('hidden')) {
+            logConsole.appendChild(p);
+            logConsole.scrollTop = logConsole.scrollHeight;
+        } else {
+            screenConsoleLog.appendChild(p);
+            screenConsoleLog.scrollTop = screenConsoleLog.scrollHeight;
+        }
         apiCall('/api/send-command', { connectionId: state.connectionId, command }).catch(err => {
-            showModal('Error', `<p class=\\"text-red-400\\">${err.message}</p>`);
+            showModal('Error', `<p class="text-red-400">${err.message}</p>`);
         });
     }
 
