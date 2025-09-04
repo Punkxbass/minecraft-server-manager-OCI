@@ -112,7 +112,7 @@ app.post('/api/disconnect', (req, res) => {
 // =============================
 // Instalación del servidor
 // =============================
-app.post('/api/install-server', (req, res) => {
+app.post('/api/install-server', async (req, res) => {
   const { connectionId, serverType, mcVersion, properties, minRam, maxRam } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
@@ -125,6 +125,9 @@ app.post('/api/install-server', (req, res) => {
 
   const minRamSafe = /^\d+[MG]$/.test(minRam) ? minRam : '4G';
   const maxRamSafe = /^\d+[MG]$/.test(maxRam) ? maxRam : '8G';
+
+  const serviceScript = (await fs.readFile(path.join(__dirname, 'scripts', 'installer.sh'), 'utf8'))
+    .replace(/\$\{/g, '\\${');
 
   const installScript = `
 #!/bin/bash
@@ -199,30 +202,16 @@ _SCRIPT
 chmod +x start.sh
 
 log "Paso 6/6: Creando servicio de systemd..."
-cat << _SERVICE > minecraft.service.tmp
-[Unit]
-Description=Minecraft Server (${serverType} ${mcVersion})
-After=network.target
-
-[Service]
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/minecraft-server
-ExecStart=/usr/bin/java -Xmx${maxRamSafe} -Xms${minRamSafe} -jar \${JAR_NAME} nogui
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-_SERVICE
-sudo systemctl daemon-reload
-sudo systemctl enable minecraft
-sudo systemctl start minecraft
+mkdir -p scripts
+cat <<'EOF_INSTALLER' > scripts/installer.sh
+${serviceScript}
+EOF_INSTALLER
+chmod +x scripts/installer.sh
+JAR_NAME="$JAR_NAME" MIN_RAM=${minRamSafe} MAX_RAM=${maxRamSafe} MC_USER="${sshData.sshUser}" MC_DIR="$SERVER_DIR" bash scripts/installer.sh
 SERVER_IP=$(curl -s ifconfig.me)
 SERVER_PORT=$(grep -E '^server-port=' server.properties | cut -d= -f2)
 SERVER_NAME=$(grep -E '^server-name=' server.properties | cut -d= -f2)
 SERVER_MOTD=$(grep -E '^motd=' server.properties | cut -d= -f2)
-log "Servicio creado, habilitado e iniciado."
 log "__INSTALL_DONE__ IP=\${SERVER_IP} PORT=\${SERVER_PORT} NAME=\${SERVER_NAME} MOTD=\${SERVER_MOTD}"
 `;
 
