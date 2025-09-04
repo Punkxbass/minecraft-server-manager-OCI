@@ -126,7 +126,9 @@ app.post('/api/install-server', (req, res) => {
   const installScript = `
 #!/bin/bash
 set -e
-exec > >(tee /dev/stdout) 2>&1
+LOG_FILE=/home/${sshData.sshUser}/install.log
+rm -f $LOG_FILE
+exec > >(tee -a $LOG_FILE /dev/stdout) 2>&1
 
 SERVER_DIR=${SERVER_PATH_BASE(sshData.sshUser)}
 JAR_NAME="server.jar"
@@ -327,7 +329,7 @@ app.get('/api/export-server', async (req, res) => {
   }
 });
 
-app.get('/api/live-logs', (req, res) => {
+app.get('/api/screen-logs', (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).end('Conexión no encontrada.');
@@ -348,6 +350,37 @@ app.get('/api/live-logs', (req, res) => {
           res.write(`data: [ERROR] No se encontró el archivo de logs.\n\n`);
           stream.close();
           res.end();
+        } else {
+          res.write(`data: ${line}\n\n`);
+        }
+      });
+    })
+    .stderr.on('data', data => res.write(`data: [ERROR LOGS]: ${data.toString().trim()}\n\n`))
+    .on('close', () => res.end());
+    req.on('close', () => { clearInterval(heartbeat); stream.close(); });
+  });
+});
+
+app.get('/api/system-logs', (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).end('Conexión no encontrada.');
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+  const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
+  const installLog = `/home/${sshData.sshUser}/install.log`;
+  const command = `tail -F -n 50 /var/log/syslog /var/log/cloud-init-output.log ${installLog}`;
+  sshData.conn.exec(command, (err, stream) => {
+    if (err) {
+      res.write(`data: [ERROR] No se pudo acceder a los logs.\n\n`);
+      res.end();
+      return;
+    }
+    stream.on('data', data => {
+      data.toString().split('\n').forEach(line => {
+        if (!line.trim()) return;
+        const header = line.match(/^==> (.*) <==$/);
+        if (header) {
+          res.write(`data: [${path.basename(header[1])}]\n\n`);
         } else {
           res.write(`data: ${line}\n\n`);
         }
