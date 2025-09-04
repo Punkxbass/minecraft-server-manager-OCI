@@ -56,6 +56,14 @@ npm start
 
 El servidor Express quedará escuchando en `http://localhost:3000`. Abre `index.html` en tu navegador para usar la interfaz.
 
+### Permiso para reiniciar la VPS
+
+Para que el botón **Reiniciar VPS** funcione, el usuario que ejecuta la aplicación debe tener permisos para ejecutar `/sbin/reboot` sin contraseña. Añade un archivo en `/etc/sudoers.d/` con la siguiente línea (sustituye `ubuntu` por tu usuario si es distinto):
+
+```bash
+ubuntu ALL=(ALL) NOPASSWD: /sbin/reboot
+```
+
 ### Instalación desde cero en Windows
 
 1. Instala [Git](https://git-scm.com/download/win) y [Node.js](https://nodejs.org/) (incluye npm).

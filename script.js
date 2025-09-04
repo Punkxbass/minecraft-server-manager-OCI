@@ -70,6 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const createBackupBtn = document.getElementById('create-backup-btn');
     const backupOutput = document.getElementById('backup-output');
     const backupsList = document.getElementById('backups-list');
+    const fileExplorerBtn = document.getElementById('file-explorer-btn');
+    const fileExplorerModal = document.getElementById('file-explorer-modal');
+    const fileExplorerCloseBtn = document.getElementById('file-explorer-close-btn');
+    const fileExplorerBody = document.getElementById('file-explorer-body');
     const exportVpsLogBtn = document.getElementById('export-vps-log-btn');
     const clearConsoleBtn = document.getElementById('clear-console-btn');
     const rebootVpsBtn = document.getElementById('reboot-vps-btn');
@@ -663,6 +667,61 @@ document.addEventListener('DOMContentLoaded', () => {
             await refreshBackupList();
         } catch (error) {
             backupOutput.textContent += `\nERROR: ${error.message}`;
+        }
+    }
+
+    // --- Explorador de Archivos ---
+    fileExplorerBtn.addEventListener('click', () => {
+        loadDirectory('');
+        fileExplorerModal.classList.remove('hidden');
+    });
+    fileExplorerCloseBtn.addEventListener('click', () => fileExplorerModal.classList.add('hidden'));
+
+    async function loadDirectory(dir) {
+        try {
+            const data = await apiCall('/api/list-files', { connectionId: state.connectionId, dir });
+            renderFileList(data.entries, dir);
+        } catch (err) {
+            fileExplorerBody.innerHTML = `<p class="text-red-400">${err.message}</p>`;
+        }
+    }
+    function renderFileList(entries, dir) {
+        fileExplorerBody.innerHTML = '';
+        const pathLabel = document.createElement('p');
+        pathLabel.className = 'mb-2 text-sm text-gray-400';
+        pathLabel.textContent = '/' + dir;
+        fileExplorerBody.appendChild(pathLabel);
+        const list = document.createElement('ul');
+        list.className = 'space-y-1';
+        if (dir) {
+            const parent = dir.split('/').slice(0, -1).join('/');
+            const li = document.createElement('li');
+            li.innerHTML = `<button class="text-blue-400 fe-nav" data-path="${parent}">../</button>`;
+            list.appendChild(li);
+        }
+        entries.forEach(e => {
+            const li = document.createElement('li');
+            if (e.type === 'dir') {
+                const newPath = dir ? dir + '/' + e.name : e.name;
+                li.innerHTML = `<button class="text-blue-400 fe-nav" data-path="${newPath}">${e.name}/</button>`;
+            } else {
+                const filePath = dir ? dir + '/' + e.name : e.name;
+                li.innerHTML = `<button class="text-green-400 fe-download" data-path="${filePath}">${e.name}</button>`;
+            }
+            list.appendChild(li);
+        });
+        fileExplorerBody.appendChild(list);
+        fileExplorerBody.querySelectorAll('.fe-nav').forEach(btn => btn.addEventListener('click', () => loadDirectory(btn.dataset.path)));
+        fileExplorerBody.querySelectorAll('.fe-download').forEach(btn => btn.addEventListener('click', () => downloadRemoteFile(btn.dataset.path)));
+    }
+    async function downloadRemoteFile(file) {
+        try {
+            const res = await fetch(`/api/download-file?connectionId=${state.connectionId}&file=${encodeURIComponent(file)}`);
+            if (!res.ok) throw new Error('Error al descargar archivo');
+            const blob = await res.blob();
+            downloadFile(file.split('/').pop(), blob);
+        } catch (err) {
+            alert(err.message);
         }
     }
 });

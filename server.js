@@ -165,6 +165,10 @@ sudo ufw allow 25565/udp
 sudo ufw --force enable
 log "Firewall del sistema operativo configurado y activado."
 
+log "Paso 2.6: Configurando permisos de reinicio..."
+echo "${sshData.sshUser} ALL=(ALL) NOPASSWD: /sbin/reboot" | sudo tee /etc/sudoers.d/minecraft-reboot >/dev/null
+log "Permisos de reinicio configurados."
+
 log "Paso 3/6: Descargando archivos del servidor (esto puede tardar)..."
 if [ "${serverType}" == "vanilla" ]; then
   MANIFEST_URL=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r --arg ver "${mcVersion}" '.versions[] | select(.id == $ver) | .url')
@@ -205,8 +209,8 @@ Type=forking
 User=${sshData.sshUser}
 WorkingDirectory=$SERVER_DIR
 ExecStart=/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
-ExecStop=/usr/bin/screen -S minecraft -p 0 -X stuff "stop\\n"
-ExecStop=/usr/bin/screen -S minecraft -X quit
+ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -p 0 -X stuff "stop\\n" 2>/dev/null || true'
+ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -X quit 2>/dev/null || true'
 Restart=on-failure
 SuccessExitStatus=0 1
 
@@ -323,8 +327,10 @@ app.get('/api/get-vps-log', async (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const serverDir = SERVER_PATH_BASE(sshData.sshUser);
   const installLog = `/home/${sshData.sshUser}/install.log`;
-  const command = `cat /var/log/syslog /var/log/cloud-init-output.log ${installLog}`;
+  const screenLog = `${serverDir}/screen.log`;
+  const command = `if [ -f ${screenLog} ]; then cat ${installLog} ${screenLog}; else cat ${installLog}; fi`;
   try {
     const { output } = await execSshCommand(sshData.conn, command);
     res.json({ success: true, logContent: output });
@@ -369,6 +375,45 @@ app.get('/api/export-server', async (req, res) => {
   }
 });
 
+app.post('/api/list-files', async (req, res) => {
+  const { connectionId, dir = '' } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const baseDir = SERVER_PATH_BASE(sshData.sshUser);
+  const safeRel = path.posix.normalize('/' + dir).replace(/^\/+/, '');
+  const targetDir = path.posix.join(baseDir, safeRel);
+  if (!targetDir.startsWith(baseDir)) return res.status(400).json({ message: 'Ruta no permitida.' });
+  try {
+    const escaped = targetDir.replace(/'/g, "'\\''");
+    const cmd = `find '${escaped}' -maxdepth 1 -mindepth 1 -printf '%f\t%y\n'`;
+    const { output } = await execSshCommand(sshData.conn, cmd);
+    const entries = output.trim() ? output.trim().split('\n').filter(Boolean).map(line => {
+      const [name, type] = line.split('\t');
+      return { name, type: type === 'd' ? 'dir' : 'file' };
+    }) : [];
+    res.json({ success: true, entries });
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo listar el directorio: ${error.message}` });
+  }
+});
+
+app.get('/api/download-file', (req, res) => {
+  const { connectionId, file } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const baseDir = SERVER_PATH_BASE(sshData.sshUser);
+  const safeRel = path.posix.normalize('/' + (file || '')).replace(/^\/+/, '');
+  const targetFile = path.posix.join(baseDir, safeRel);
+  if (!targetFile.startsWith(baseDir)) return res.status(400).json({ message: 'Ruta no permitida.' });
+  sshData.conn.sftp((err, sftp) => {
+    if (err) return res.status(500).json({ message: 'Error SFTP.' });
+    const stream = sftp.createReadStream(targetFile);
+    stream.on('error', e => res.status(500).end(`Error al leer archivo: ${e.message}`));
+    res.setHeader('Content-Disposition', `attachment; filename=${path.basename(targetFile)}`);
+    stream.pipe(res);
+  });
+});
+
 app.get('/api/screen-logs', (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
@@ -407,8 +452,9 @@ app.get('/api/system-logs', (req, res) => {
   if (!sshData) return res.status(400).end('Conexión no encontrada.');
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
+  const serverDir = SERVER_PATH_BASE(sshData.sshUser);
   const installLog = `/home/${sshData.sshUser}/install.log`;
-  const command = `tail -F -n 50 /var/log/syslog /var/log/cloud-init-output.log ${installLog}`;
+  const command = `if [ -f ${serverDir}/screen.log ]; then tail -F -n 50 ${installLog} ${serverDir}/screen.log; else tail -F -n 50 ${installLog}; fi`;
   sshData.conn.exec(command, (err, stream) => {
     if (err) {
       res.write(`data: [ERROR] No se pudo acceder a los logs.\n\n`);
@@ -736,7 +782,7 @@ app.post('/api/reboot-vps', async (req, res) => {
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   try {
-    await execSshCommand(sshData.conn, `sudo nohup systemctl reboot >/dev/null 2>&1 &`);
+    await execSshCommand(sshData.conn, `sudo /sbin/reboot >/dev/null 2>&1 &`);
     res.json({ success: true, message: 'VPS reiniciándose.' });
   } catch (error) {
     res.status(500).json({ message: `Error al reiniciar VPS: ${error.message}` });
