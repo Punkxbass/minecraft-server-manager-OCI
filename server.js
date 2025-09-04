@@ -127,67 +127,72 @@ app.post('/api/install-server', (req, res) => {
 #!/bin/bash
 set -e
 LOG_FILE=/home/${sshData.sshUser}/install.log
-rm -f $LOG_FILE
-exec >>$LOG_FILE 2>&1
+rm -f "$LOG_FILE"
+touch "$LOG_FILE"
+exec 3>&1
+exec >>"$LOG_FILE" 2>&1
+
+log(){ echo "$1"; echo "$1" >&3; }
+trap 'log "[ERROR] Línea $LINENO: fallo inesperado. Revisa $LOG_FILE"' ERR
 
 SERVER_DIR=${SERVER_PATH_BASE(sshData.sshUser)}
 JAR_NAME="server.jar"
 
-echo "--- Iniciando Instalación (Tipo: ${serverType}, Versión: ${mcVersion}) ---"
-echo "Paso 1: Limpiando instalación anterior..."
-sudo systemctl stop minecraft &>/dev/null || echo "Info: Servicio no activo."
-sudo systemctl disable minecraft &>/dev/null || echo "Info: Servicio no habilitado."
+log "--- Iniciando Instalación (Tipo: ${serverType}, Versión: ${mcVersion}) ---"
+log "Paso 1/6: Limpiando instalación anterior."
+sudo systemctl stop minecraft &>/dev/null || log "Info: Servicio no activo."
+sudo systemctl disable minecraft &>/dev/null || log "Info: Servicio no habilitado."
 sudo rm -f /etc/systemd/system/minecraft.service
 sudo systemctl daemon-reload
 sudo systemctl reset-failed
 rm -rf $SERVER_DIR
 mkdir -p $SERVER_DIR
 cd $SERVER_DIR
-echo "Limpieza completada."
+log "Limpieza completada."
 
-echo "Paso 2: Instalando dependencias (Java 21, wget, jq, screen, ufw)..."
-sudo apt-get update > /dev/null
-sudo apt-get install -y openjdk-21-jdk wget jq screen ufw > /dev/null
-echo "Dependencias instaladas."
+log "Paso 2/6: Instalando dependencias del sistema..."
+sudo apt-get update
+sudo apt-get install -y openjdk-21-jdk wget jq screen ufw
+log "Dependencias instaladas."
 
-echo "Paso 2.5: Configurando firewall del sistema operativo (UFW)..."
+log "Paso 2.5: Configurando firewall del sistema operativo (UFW)..."
 sudo ufw allow 22/tcp
 sudo ufw allow 25565/tcp
 sudo ufw allow 25565/udp
 sudo ufw --force enable
-echo "Firewall del sistema operativo configurado y activado."
+log "Firewall del sistema operativo configurado y activado."
 
-echo "Paso 3: Descargando archivos del servidor..."
+log "Paso 3/6: Descargando archivos del servidor (esto puede tardar)..."
 if [ "${serverType}" == "vanilla" ]; then
   MANIFEST_URL=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r --arg ver "${mcVersion}" '.versions[] | select(.id == $ver) | .url')
   DOWNLOAD_URL=$(curl -s $MANIFEST_URL | jq -r '.downloads.server.url')
-  wget -q --show-progress -O server.jar $DOWNLOAD_URL
+  wget --show-progress -O server.jar $DOWNLOAD_URL
 elif [ "${serverType}" == "paper" ]; then
   BUILD=$(curl -s https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds | jq -r '.builds[-1].build')
   DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/\${BUILD}/downloads/paper-${mcVersion}-\${BUILD}.jar"
-  wget -q --show-progress -O server.jar "$DOWNLOAD_URL"
+  wget --show-progress -O server.jar "$DOWNLOAD_URL"
 elif [ "${serverType}" == "fabric" ]; then
   FABRIC_INSTALLER_URL=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" | jq -r '.[0].url')
-  wget -q --show-progress -O fabric-installer.jar "$FABRIC_INSTALLER_URL"
+  wget --show-progress -O fabric-installer.jar "$FABRIC_INSTALLER_URL"
   java -jar fabric-installer.jar server -mcversion ${mcVersion} -downloadMinecraft
   JAR_NAME="fabric-server-launch.jar"
 fi
-echo "Descarga completada."
+log "Descarga completada."
 
-echo "Paso 4: Configurando archivos del servidor..."
+log "Paso 4/6: Configurando archivos del servidor..."
 echo "eula=true" > eula.txt
 echo -e "${propertiesString}" > server.properties
 echo "enable-rcon=false" >> server.properties
 
-echo "Paso 5: Creando script de inicio (start.sh)..."
+log "Paso 5/6: Creando script de inicio (start.sh)..."
 cat > start.sh << '_SCRIPT'
 #!/bin/bash
 java -Xms4G -Xmx20G -jar \${JAR_NAME} nogui
 _SCRIPT
 chmod +x start.sh
 
-echo "Paso 6: Creando servicio de systemd con screen..."
-sudo tee /etc/systemd/system/minecraft.service > /dev/null << _SERVICE
+log "Paso 6/6: Creando servicio de systemd con screen..."
+cat << _SERVICE > minecraft.service.tmp
 [Unit]
 Description=Minecraft Server (${serverType} ${mcVersion})
 After=network.target
@@ -204,7 +209,7 @@ ExecStop=/usr/bin/screen -S minecraft -p 0 -X eval "stuff \"stop\\015\""
 [Install]
 WantedBy=multi-user.target
 _SERVICE
-
+sudo mv minecraft.service.tmp /etc/systemd/system/minecraft.service
 sudo systemctl daemon-reload
 sudo systemctl enable minecraft
 sudo systemctl start minecraft
@@ -212,8 +217,8 @@ SERVER_IP=$(curl -s ifconfig.me)
 SERVER_PORT=$(grep -E '^server-port=' server.properties | cut -d= -f2)
 SERVER_NAME=$(grep -E '^server-name=' server.properties | cut -d= -f2)
 SERVER_MOTD=$(grep -E '^motd=' server.properties | cut -d= -f2)
-echo "Servicio creado, habilitado e iniciado."
-echo "__INSTALL_DONE__ IP=$SERVER_IP PORT=$SERVER_PORT NAME=$SERVER_NAME MOTD=$SERVER_MOTD"
+log "Servicio creado, habilitado e iniciado."
+log "__INSTALL_DONE__ IP=\${SERVER_IP} PORT=\${SERVER_PORT} NAME=\${SERVER_NAME} MOTD=\${SERVER_MOTD}"
 `;
 
   execSshCommand(sshData.conn, installScript, res).catch(err => {
