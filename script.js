@@ -69,6 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupOutput = document.getElementById('backup-output');
     const backupsList = document.getElementById('backups-list');
     const exportVpsLogBtn = document.getElementById('export-vps-log-btn');
+    const clearConsoleBtn = document.getElementById('clear-console-btn');
+    const rebootVpsBtn = document.getElementById('reboot-vps-btn');
     const openScreenConsoleBtn = document.getElementById('open-screen-console-btn');
     const exportScreenLogBtnMain = document.getElementById('export-screen-log-btn-main');
     const screenConsoleModal = document.getElementById('screen-console-modal');
@@ -388,6 +390,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     exportVpsLogBtn.addEventListener('click', exportVpsLog);
+    clearConsoleBtn.addEventListener('click', async () => {
+        logConsole.innerHTML = '';
+        try {
+            await apiCall('/api/clear-console', { connectionId: state.connectionId });
+            startSystemLogs();
+        } catch (error) {
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
+        }
+    });
+    rebootVpsBtn.addEventListener('click', async () => {
+        if (!confirm('¿Reiniciar la VPS?')) return;
+        try {
+            await apiCall('/api/reboot-vps', { connectionId: state.connectionId });
+            showModal('Reinicio en proceso', '<p>La VPS se está reiniciando.</p>');
+        } catch (error) {
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
+        }
+    });
     exportScreenLogBtnMain.addEventListener('click', exportScreenLog);
     openScreenConsoleBtn.addEventListener('click', () => { screenConsoleLog.textContent=''; openScreenConsole(); });
     screenConsoleCloseBtn.addEventListener('click', closeScreenConsole);

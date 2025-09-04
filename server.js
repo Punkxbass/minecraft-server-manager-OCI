@@ -192,6 +192,7 @@ _SCRIPT
 chmod +x start.sh
 
 log "Paso 6/6: Creando servicio de systemd con screen..."
+PID_FILE="$SERVER_DIR/minecraft.pid"
 cat << _SERVICE > minecraft.service.tmp
 [Unit]
 Description=Minecraft Server (${serverType} ${mcVersion})
@@ -204,10 +205,10 @@ KillMode=control-group
 SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
 Type=forking
-PIDFile=/run/minecraft.pid
+PIDFile=$PID_FILE
 RemainAfterExit=yes
-ExecStart=/bin/bash -c '/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh; sleep 1; screen -list | grep "\\.minecraft" | head -n1 | cut -d. -f1 | tr -d "\\t" > /run/minecraft.pid'
-ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -p 0 -X eval "stuff \\"stop\\015\""; sleep 5; /usr/bin/screen -S minecraft -X quit'
+ExecStart=/bin/bash -c '/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh; sleep 1; screen -list | grep "\\.minecraft" | head -n1 | cut -d. -f1 | tr -d "\\t" > $PID_FILE'
+ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -p 0 -X eval "stuff \\\"stop\\015\\""; sleep 5; /usr/bin/screen -S minecraft -X quit'
 
 [Install]
 WantedBy=multi-user.target
@@ -695,6 +696,35 @@ app.post('/api/open-oci-firewall', async (req, res) => {
     res.json({ success: true, message: 'Firewall de OCI configurado correctamente para Minecraft (puerto 25565 TCP/UDP)' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error al configurar el firewall de OCI', error: error.stderr || error.message });
+  }
+});
+
+// =============================
+// Comandos rápidos de la VPS
+// =============================
+app.post('/api/clear-console', async (req, res) => {
+  const { connectionId } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const serverDir = SERVER_PATH_BASE(sshData.sshUser);
+  const cmd = `> /home/${sshData.sshUser}/install.log; if [ -f ${serverDir}/screen.log ]; then > ${serverDir}/screen.log; fi`;
+  try {
+    await execSshCommand(sshData.conn, cmd);
+    res.json({ success: true, message: 'Consola limpiada.' });
+  } catch (error) {
+    res.status(500).json({ message: `Error al limpiar consola: ${error.message}` });
+  }
+});
+
+app.post('/api/reboot-vps', async (req, res) => {
+  const { connectionId } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  try {
+    await execSshCommand(sshData.conn, `sudo nohup bash -c 'sleep 1 && reboot' >/dev/null 2>&1 &`);
+    res.json({ success: true, message: 'VPS reiniciándose.' });
+  } catch (error) {
+    res.status(500).json({ message: `Error al reiniciar VPS: ${error.message}` });
   }
 });
 
