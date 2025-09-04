@@ -1,11 +1,11 @@
 document.addEventListener('DOMContentLoaded', () => {
     const state = {
         connectionId: null,
-        systemEventSource: null,
         sshKeyContent: null,
         lastStatusOutput: '',
         resourceMonitorInterval: null,
-        screenEventSource: null,
+        term: null,
+        terminalSocket: null,
     };
 
     // --- Selectores de Elementos ---
@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportPresetBtn = document.getElementById('export-preset-btn');
     const presetFileInput = document.getElementById('preset-file-input');
     const logConsole = document.getElementById('log-console');
+    const commandDropdown = document.getElementById('command-dropdown');
     const notificationArea = document.getElementById('server-status-notification');
     const cpuUsageEl = document.getElementById('cpu-usage');
     const ramUsageEl = document.getElementById('ram-usage');
@@ -49,9 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const maxRamInput = document.getElementById('max-ram');
     const installerOutput = document.getElementById('installer-output');
     const installServerBtn = document.getElementById('install-server-btn');
-    const commandInput = document.getElementById('command-input');
-    const sendCommandBtn = document.getElementById('send-command-btn');
-    const commandPresetBtns = document.querySelectorAll('.command-preset-btn');
     const editPropertiesBtn = document.getElementById('edit-properties-btn');
     const propertiesModal = document.getElementById('properties-modal');
     const propertiesCloseBtn = document.getElementById('properties-close-btn');
@@ -77,16 +75,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportVpsLogBtn = document.getElementById('export-vps-log-btn');
     const clearConsoleBtn = document.getElementById('clear-console-btn');
     const rebootVpsBtn = document.getElementById('reboot-vps-btn');
-    const openScreenConsoleBtn = document.getElementById('open-screen-console-btn');
-    const exportScreenLogBtnMain = document.getElementById('export-screen-log-btn-main');
-    const screenConsoleModal = document.getElementById('screen-console-modal');
-    const screenConsoleCloseBtn = document.getElementById('screen-console-close-btn');
-    const screenConsoleLog = document.getElementById('screen-console-log');
-    const screenConsoleInput = document.getElementById('screen-console-input');
-    const screenConsoleSend = document.getElementById('screen-console-send');
-    const screenCmdBtns = document.querySelectorAll('.screen-cmd-btn');
-    const screenExportLogBtn = document.getElementById('screen-export-log-btn');
+    const downloadConsoleLogBtn = document.getElementById('download-console-log-btn');
     const modsGuideBtn = document.getElementById('mods-guide-btn');
+    const onlinePlayersList = document.getElementById('online-players-list');
+    const refreshOnlineBtn = document.getElementById('refresh-online-btn');
 
     // --- Lógica de Modales ---
     const showModal = (title, content, footerContent = '') => {
@@ -196,16 +188,17 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const data = await apiCall('/api/connect', { vpsIp, sshUser, sshKey: state.sshKeyContent });
             state.connectionId = data.connectionId; loginView.classList.add('hidden'); mainView.classList.remove('hidden');
-            await checkServerStatus(); startSystemLogs(); startResourceMonitor();
+            await checkServerStatus(); startTerminal(); startResourceMonitor();
         } catch (error) { loginError.textContent = `Error: ${error.message}`;
         } finally { connectBtn.disabled = false; connectBtn.textContent = 'Conectar'; }
     }
     connectBtn.addEventListener('click', connectToServer);
     disconnectBtn.addEventListener('click', () => {
         if (state.connectionId) apiCall('/api/disconnect', { connectionId: state.connectionId });
-        stopSystemLogs(); stopResourceMonitor(); stopScreenConsole();
+        stopTerminal(); stopResourceMonitor();
         state.connectionId = null; state.sshKeyContent = null;
-        sshKeyFileName.textContent = ''; logConsole.innerHTML = ''; notificationArea.innerHTML = '';
+        vpsIpInput.value = ''; sshUserInput.value = ''; sshKeyInput.value = ''; sshKeyFileName.textContent = '';
+        logConsole.innerHTML = ''; notificationArea.innerHTML = '';
         mainView.classList.add('hidden'); loginView.classList.remove('hidden');
     });
     sshKeyUploadBtn.addEventListener('click', () => sshKeyInput.click());
@@ -339,9 +332,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Actualizar la notificación principal
             checkServerStatus();
-            // Reiniciar los logs en vivo si la acción fue start o restart
             if (['start', 'restart'].includes(action)) {
-                startSystemLogs();
+                startTerminal();
             }
 
         } catch (error) { 
@@ -401,21 +393,21 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadFile('vps.log', data.logContent || '');
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
-    async function exportScreenLog() {
+    async function downloadConsoleLog() {
         if (!state.connectionId) return;
         try {
-            const res = await fetch(`/api/get-screen-log?connectionId=${state.connectionId}`);
-            const data = await res.json();
-            downloadFile('screen.log', data.logContent || '');
+            const res = await fetch(`/api/download-console-log?connectionId=${state.connectionId}`);
+            if (!res.ok) throw new Error('No se pudo descargar el log.');
+            const blob = await res.blob();
+            downloadFile('latest.log', blob);
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
 
     exportVpsLogBtn.addEventListener('click', exportVpsLog);
     clearConsoleBtn.addEventListener('click', async () => {
-        logConsole.innerHTML = '';
+        state.term?.clear();
         try {
             await apiCall('/api/clear-console', { connectionId: state.connectionId });
-            startSystemLogs();
         } catch (error) {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
@@ -429,17 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
-    exportScreenLogBtnMain.addEventListener('click', exportScreenLog);
-    openScreenConsoleBtn.addEventListener('click', () => { screenConsoleLog.textContent=''; openScreenConsole(); });
-    screenConsoleCloseBtn.addEventListener('click', closeScreenConsole);
-    screenConsoleModal.addEventListener('click', (e) => { if (e.target === screenConsoleModal) closeScreenConsole(); });
-    screenConsoleSend.addEventListener('click', () => { sendCommand(screenConsoleInput.value.trim()); screenConsoleInput.value=''; });
-    screenConsoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(screenConsoleInput.value.trim()); screenConsoleInput.value=''; }});
-    screenCmdBtns.forEach(btn => btn.addEventListener('click', () => {
-        screenConsoleInput.value = btn.dataset.command;
-        screenConsoleInput.focus();
-    }));
-    screenExportLogBtn.addEventListener('click', exportScreenLog);
+    downloadConsoleLogBtn.addEventListener('click', downloadConsoleLog);
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
     modsGuideBtn.addEventListener('click', async () => {
         try {
@@ -449,65 +431,59 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
-    commandPresetBtns.forEach(btn => btn.addEventListener('click', () => {
-        commandInput.value = btn.dataset.command;
-        commandInput.focus();
-    }));
-    sendCommandBtn.addEventListener('click', () => { sendCommand(commandInput.value.trim()); commandInput.value=''; });
-    commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(commandInput.value.trim()); commandInput.value=''; } });
-
-    function sendCommand(command) {
-        if (!command) return;
-        const p = document.createElement('p');
-        p.textContent = `> ${command}`;
-        if (screenConsoleModal.classList.contains('hidden')) {
-            logConsole.appendChild(p);
-            logConsole.scrollTop = logConsole.scrollHeight;
-        } else {
-            screenConsoleLog.appendChild(p);
-            screenConsoleLog.scrollTop = screenConsoleLog.scrollHeight;
+    const commonCommands = [
+        { cmd: '/kick <jugador>', desc: 'Expulsa a un jugador' },
+        { cmd: '/ban <jugador>', desc: 'Banea a un jugador' },
+        { cmd: '/pardon <jugador>', desc: 'Desbanea a un jugador' },
+        { cmd: '/gamemode survival <jugador>', desc: 'Modo supervivencia' },
+        { cmd: '/gamemode creative <jugador>', desc: 'Modo creativo' }
+    ];
+    commonCommands.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.cmd;
+        opt.textContent = `${c.cmd} - ${c.desc}`;
+        commandDropdown.appendChild(opt);
+    });
+    commandDropdown.addEventListener('change', () => {
+        const cmd = commandDropdown.value;
+        if (cmd) {
+            navigator.clipboard.writeText(cmd);
+            commandDropdown.value = '';
         }
+    });
+
+    function sendCommandDirect(command) {
+        if (!command) return;
         apiCall('/api/send-command', { connectionId: state.connectionId, command }).catch(err => {
             showModal('Error', `<p class="text-red-400">${err.message}</p>`);
         });
     }
 
-    // --- Logs en vivo ---
-    function startSystemLogs() {
-        stopSystemLogs();
-        logConsole.innerHTML = '<p class="text-yellow-400">Conectando a logs en vivo...</p>';
-        const url = `/api/system-logs?connectionId=${state.connectionId}`;
-        state.systemEventSource = new EventSource(url);
-        let firstMessage = true;
-        state.systemEventSource.onopen = () => {
-            if (firstMessage) logConsole.innerHTML = '<p class="text-yellow-400">Conexión a logs establecida. Esperando datos...</p>';
-        };
-        state.systemEventSource.onmessage = (event) => {
-            if (firstMessage) { logConsole.innerHTML = ''; firstMessage = false; }
-            const p = document.createElement('p'); p.textContent = event.data;
-            logConsole.appendChild(p); logConsole.scrollTop = logConsole.scrollHeight;
-        };
-        state.systemEventSource.onerror = () => {
-            if (!firstMessage) logConsole.innerHTML += '<p class="text-red-500 mt-4">Conexión a logs perdida.</p>';
-            stopSystemLogs();
-        };
+    function startTerminal() {
+        stopTerminal();
+        const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+        const socket = new WebSocket(`${protocol}://${location.host}/ws/console?connectionId=${state.connectionId}`);
+        state.terminalSocket = socket;
+        const term = new Terminal({ cursorBlink: true });
+        const fitAddon = new FitAddon.FitAddon();
+        const attachAddon = new AttachAddon.AttachAddon(socket);
+        term.loadAddon(fitAddon);
+        term.loadAddon(attachAddon);
+        term.open(logConsole);
+        fitAddon.fit();
+        window.addEventListener('resize', () => fitAddon.fit());
+        state.term = term;
     }
-    function stopSystemLogs() { if (state.systemEventSource) { state.systemEventSource.close(); state.systemEventSource = null; } }
-    function startScreenConsole() {
-        stopScreenConsole();
-        const url = `/api/screen-logs?connectionId=${state.connectionId}`;
-        state.screenEventSource = new EventSource(url);
-        state.screenEventSource.onmessage = (event) => {
-            const p = document.createElement('p');
-            p.textContent = event.data;
-            screenConsoleLog.appendChild(p);
-            screenConsoleLog.scrollTop = screenConsoleLog.scrollHeight;
-        };
-        state.screenEventSource.onerror = () => stopScreenConsole();
+    function stopTerminal() {
+        if (state.terminalSocket) {
+            state.terminalSocket.close();
+            state.terminalSocket = null;
+        }
+        if (state.term) {
+            state.term.dispose();
+            state.term = null;
+        }
     }
-    function stopScreenConsole() { if (state.screenEventSource) { state.screenEventSource.close(); state.screenEventSource = null; } }
-    function openScreenConsole() { startScreenConsole(); screenConsoleModal.classList.remove('hidden'); }
-    function closeScreenConsole() { stopScreenConsole(); screenConsoleModal.classList.add('hidden'); }
     async function populateVersionDropdowns() {
         const type = serverTypeSelect.value;
         minecraftVersionSelect.innerHTML = '<option value="">Cargando...</option>';
@@ -575,9 +551,11 @@ document.addEventListener('DOMContentLoaded', () => {
         playersModal.classList.remove('hidden');
         opsList.innerHTML = '<p>Cargando...</p>';
         whitelistList.innerHTML = '<p>Cargando...</p>';
+        onlinePlayersList.innerHTML = '<p>Cargando...</p>';
         try {
             const data = await apiCall(`/api/get-players?connectionId=${state.connectionId}`, {}, 'GET');
             renderPlayerLists(data.ops || [], data.whitelist || []);
+            await refreshOnlinePlayers();
         } catch (error) {
             opsList.innerHTML = `<p class="text-red-400">${error.message}</p>`;
             whitelistList.innerHTML = '';
@@ -607,6 +585,29 @@ document.addEventListener('DOMContentLoaded', () => {
             catch (err) { alert(err.message); }
         }));
     }
+    async function refreshOnlinePlayers() {
+        try {
+            const data = await apiCall(`/api/players/online?connectionId=${state.connectionId}`, {}, 'GET');
+            renderOnlinePlayers(data.players || []);
+        } catch (error) {
+            onlinePlayersList.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+        }
+    }
+    function renderOnlinePlayers(players) {
+        onlinePlayersList.innerHTML = '';
+        if (players.length === 0) {
+            onlinePlayersList.innerHTML = '<p>No hay jugadores conectados.</p>';
+            return;
+        }
+        players.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'flex justify-between items-center mb-1';
+            li.innerHTML = `<span>${p}</span><button data-username="${p}" class="kick-player text-red-500 text-sm">Kick</button>`;
+            onlinePlayersList.appendChild(li);
+        });
+        onlinePlayersList.querySelectorAll('.kick-player').forEach(btn => btn.addEventListener('click', () => sendCommandDirect(`kick ${btn.dataset.username}`)));
+    }
+    refreshOnlineBtn.addEventListener('click', refreshOnlinePlayers);
     addOpBtn.addEventListener('click', async () => {
         const username = prompt('Nombre del jugador a agregar como OP:');
         if (!username) return;
