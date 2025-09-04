@@ -159,6 +159,16 @@
                                 <option>Cargando versiones...</option>
                             </select>
                         </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="min-ram" class="block mb-2 text-sm font-medium text-gray-300">RAM mínima (Xms)</label>
+                                <input type="text" id="min-ram" value="4G" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white" />
+                            </div>
+                            <div>
+                                <label for="max-ram" class="block mb-2 text-sm font-medium text-gray-300">RAM máxima (Xmx)</label>
+                                <input type="text" id="max-ram" value="8G" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white" />
+                            </div>
+                        </div>
                         <div class="pt-4 border-t border-gray-700">
                             <h4 class="text-lg font-bold mb-3 text-gray-200">Propiedades del Servidor</h4>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-64 overflow-y-auto p-2 bg-gray-900/50 rounded-lg">

@@ -113,7 +113,7 @@ app.post('/api/disconnect', (req, res) => {
 // Instalación del servidor
 // =============================
 app.post('/api/install-server', (req, res) => {
-  const { connectionId, serverType, mcVersion, properties } = req.body;
+  const { connectionId, serverType, mcVersion, properties, minRam, maxRam } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
 
@@ -122,6 +122,9 @@ app.post('/api/install-server', (req, res) => {
   const propertiesString = Object.entries(properties || {})
     .map(([k, v]) => `${k.replace(/-/g, '.')}=${v}`)
     .join('\\n');
+
+  const minRamSafe = /^\d+[MG]$/.test(minRam) ? minRam : '4G';
+  const maxRamSafe = /^\d+[MG]$/.test(maxRam) ? maxRam : '8G';
 
   const installScript = `
 #!/bin/bash
@@ -187,7 +190,7 @@ echo "enable-rcon=false" >> server.properties
 log "Paso 5/6: Creando script de inicio (start.sh)..."
 cat > start.sh << '_SCRIPT'
 #!/bin/bash
-java -Xms4G -Xmx20G -jar \${JAR_NAME} nogui
+java -Xms${minRamSafe} -Xmx${maxRamSafe} -jar \${JAR_NAME} nogui
 _SCRIPT
 chmod +x start.sh
 
@@ -198,9 +201,10 @@ Description=Minecraft Server (${serverType} ${mcVersion})
 After=network.target
 
 [Service]
+Type=forking
 User=${sshData.sshUser}
 WorkingDirectory=$SERVER_DIR
-ExecStart=/usr/bin/screen -DmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
+ExecStart=/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
 ExecStop=/usr/bin/screen -S minecraft -p 0 -X stuff "stop\\n"
 ExecStop=/usr/bin/screen -S minecraft -X quit
 Restart=on-failure
@@ -271,7 +275,7 @@ app.post('/api/send-command', async (req, res) => {
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   if (!command) return res.status(400).json({ message: 'El comando no puede estar vacío.' });
 
-  const screenCommand = `/usr/bin/screen -p 0 -S minecraft -X eval "stuff \\\"${escapeForScreen(command)}\\\\015\\""`;
+  const screenCommand = `/usr/bin/screen -S minecraft -p 0 -X stuff "${escapeForScreen(command)}\r"`;
 
   try {
     await execSshCommand(sshData.conn, screenCommand);
