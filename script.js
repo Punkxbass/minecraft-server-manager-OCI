@@ -140,14 +140,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 showModal('Instalación fallida', '<p>Ocurrió un error durante la instalación. Se generó un log.</p>',
                     `<div class="flex gap-2">`+
                     `<button id="view-log-btn" class="px-3 py-1 bg-blue-600 rounded">Ver log</button>`+
-                    `<button id="export-log-btn" class="px-3 py-1 bg-green-600 rounded">Exportar log</button>`+
+                    `<button id="download-install-log-btn" class="px-3 py-1 bg-green-600 rounded">Descargar Log de Instalación</button>`+
                     `<button id="close-log-btn" class="px-3 py-1 bg-gray-600 rounded">Cerrar</button>`+
                     `</div>`);
                 const viewBtn = document.getElementById('view-log-btn');
-                const exportBtn = document.getElementById('export-log-btn');
+                const downloadBtn = document.getElementById('download-install-log-btn');
                 const closeBtn = document.getElementById('close-log-btn');
                 viewBtn.addEventListener('click', () => showModal('Log de instalación', `<pre class="whitespace-pre-wrap text-sm">${logText}</pre>`));
-                exportBtn.addEventListener('click', () => downloadFile('install-log.txt', logText));
+                downloadBtn.addEventListener('click', async () => {
+                    try {
+                        const res = await fetch(`/api/download-install-log?connectionId=${state.connectionId}`);
+                        if (!res.ok) throw new Error('No se pudo descargar el log.');
+                        const blob = await res.blob();
+                        downloadFile('install.log', blob);
+                    } catch (err) {
+                        showModal('Error', `<p class="text-red-400">${err.message}</p>`);
+                    }
+                });
                 closeBtn.addEventListener('click', hideModal);
             }
         } catch (error) {
