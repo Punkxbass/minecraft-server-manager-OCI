@@ -1,45 +1,40 @@
-# Proyecto: OCI Minecraft Server - Visión General Técnica
+# Gestor Web de Servidor de Minecraft en OCI
 
-## 1. Resumen del Proyecto
+## Resumen
+Se consolidaron tres prototipos en una única base de código funcional compuesta por `index.html`, `script.js` y `server.js`. Esta herramienta permite administrar de forma remota un servidor de Minecraft alojado en Oracle Cloud Infrastructure.
 
-Este documento describe el plan de desarrollo para "OCI Minecraft Server", una aplicación web diseñada para simplificar la administración de un servidor de Minecraft alojado en una Instancia de Cómputo (VPS) de Oracle Cloud Infrastructure (OCI). El objetivo es proporcionar una interfaz gráfica centralizada que permita a un administrador controlar todos los aspectos del servidor de forma remota, desde la instalación inicial hasta la gestión diaria, sin necesidad de acceso manual constante a la terminal.
+## ¿Qué se hizo y cómo?
+- Se integró la estructura robusta del backend de la Versión 3 con la gestión de firewall de la Versión 1 y la interfaz gráfica de la Versión 2.
+- `server.js` unifica la conexión SSH, la instalación del servidor, el control del servicio, la apertura de puertos en UFW y en las listas de seguridad de OCI, la administración de jugadores, la gestión de copias de seguridad y la consulta de guías Markdown.
+- `script.js` coordina la interacción del usuario con el backend: establece la conexión, muestra logs en vivo, ejecuta comandos, controla el servidor y gestiona jugadores y backups.
+- `index.html` ofrece una interfaz basada en Tailwind con modales para editar propiedades, manejar jugadores y gestionar copias de seguridad, además de una consola de logs y comandos.
 
----
+## Resultados esperados
+La aplicación permite:
+- Instalar y configurar diferentes versiones del servidor de Minecraft desde la web.
+- Controlar el servicio (iniciar, detener, reiniciar) y ver registros en tiempo real.
+- Abrir puertos automáticamente tanto en UFW como en las listas de seguridad de OCI.
+- Administrar operadores y whitelist sin acceder manualmente al servidor.
+- Crear, restaurar y eliminar copias de seguridad del mundo.
+Todo ello mediante una conexión SSH segura establecida por el backend.
 
-## 2. Arquitectura y Componentes
+## Funcionamiento de la interfaz y del proyecto
+1. **Pantalla de inicio**: solicita datos SSH y los guarda como preset para reconexiones futuras.
+2. **Panel principal**: al conectarse se habilitan los botones de instalación, control del servidor, firewall y utilidades.
+3. **Consola de logs y comandos**: muestra el log en vivo del servidor y permite enviar comandos directamente.
+4. **Modales de administración**:
+   - *server.properties*: edición y guardado remoto.
+   - *Jugadores*: alta y baja en operadores y whitelist.
+   - *Backups*: listado, creación, restauración y eliminación de copias.
+5. **Guías Markdown**: botones de ayuda que cargan documentos alojados en el VPS para asistencia.
 
-La aplicación se compondrá de tres archivos principales que conforman una arquitectura cliente-servidor estándar:
+El backend expone una API REST que procesa cada una de estas acciones, se comunica con el servidor mediante SSH y responde en formato JSON.
 
-* **`index.html` (Frontend):** Contendrá la estructura de la interfaz de usuario (UI) y el CSS embebido para el estilo. Será la consola visual desde la cual el administrador interactuará con el sistema.
-* **`script.js` (Lógica del Cliente):** Se ejecutará en el navegador del usuario. Gestionará los eventos de la UI (clics en botones, entradas de texto), enviará solicitudes al backend y actualizará la página dinámicamente con la información recibida (ej. logs del servidor, estado de los recursos).
-* **`server.js` (Backend - Node.js):** Se ejecutará en el mismo VPS que el servidor de Minecraft. Actuará como intermediario, recibiendo peticiones HTTP desde el frontend, ejecutando comandos en el sistema operativo (a través de una conexión SSH segura a sí mismo o mediante `child_process`), interactuando con los archivos del servidor de Minecraft y devolviendo los resultados al cliente.
+## Ejecución
+Con Node.js instalado en la máquina donde reside `server.js`:
 
----
+```bash
+node server.js
+```
 
-## 3. Estado Actual del Desarrollo
-
-El desarrollo se encuentra en una fase de prototipado inicial. Se han generado tres versiones preliminares mediante herramientas de IA, cada una con éxitos y fracasos parciales:
-
-* **Prototipo 1 ("Firewall"):** Su principal logro fue la implementación de código funcional para la gestión del firewall, tanto a nivel del sistema operativo (UFW) como de la infraestructura de OCI.
-* **Prototipo 2 ("UI"):** Presenta la interfaz de usuario más desarrollada en términos de estructura HTML y diseño CSS, estableciendo una base visual sólida, aunque su lógica de cliente no es funcional.
-* **Prototipo 3 ("Backend"):** Contiene la arquitectura de backend más robusta y mejor organizada en `server.js`, ideal para gestionar la lógica de negocio y las interacciones con el sistema.
-
-El desafío actual es que ninguna de estas versiones integra correctamente las tres áreas (backend, frontend y funcionalidades específicas).
-
----
-
-## 4. Objetivo Inmediato: Fusión y Refactorización
-
-La siguiente fase crítica del proyecto consiste en unificar los componentes funcionales de los tres prototipos en una única base de código coherente y operativa.
-
-El plan de acción es el siguiente:
-
-1.  **Análisis Comparativo:** Realizar una revisión exhaustiva del código de los tres prototipos para identificar y aislar las piezas de código que implementan correctamente cada funcionalidad.
-2.  **Diseño de la Arquitectura Unificada:** Definir una nueva estructura de código que utilice:
-    * La **base de backend** del Prototipo 3.
-    * El **diseño de interfaz** del Prototipo 2.
-    * La **lógica de firewall** funcional del Prototipo 1.
-    * La **lógica de frontend** del Prototipo 2, que será refactorizada para comunicarse eficazmente con el nuevo backend.
-3.  **Desarrollo Iterativo:** Reconstruir los tres archivos (`server.js`, `script.js`, `index.html`) paso a paso, integrando y probando cada funcionalidad de forma aislada antes de combinarla en el producto final.
-
-Este proceso de refactorización sentará las bases para un desarrollo estable y escalable de todas las funcionalidades descritas en la visión del proyecto.
+Luego abrir `index.html` en un navegador y utilizar la interfaz.
