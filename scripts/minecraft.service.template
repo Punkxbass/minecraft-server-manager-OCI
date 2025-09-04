@@ -1,0 +1,26 @@
+[Unit]
+Description=Minecraft Server
+Wants=network-online.target
+After=network-online.target
+
+
+# Run as a dedicated, non-privileged user for security
+User={{USER}}
+Group={{USER}}
+
+# Set the working directory to where the server files are located
+WorkingDirectory={{WORKING_DIR}}
+
+# Command to start the server. Adjust memory flags (-Xmx, -Xms) as needed.
+ExecStart=/usr/bin/java -Xmx4G -Xms1G -jar server.jar nogui
+
+# Restart policy for resilience
+Restart=on-failure
+RestartSec=30s
+
+# The service does not need standard input
+StandardInput=null
+
+[Install]
+# Enable the service to start on boot
+WantedBy=multi-user.target
