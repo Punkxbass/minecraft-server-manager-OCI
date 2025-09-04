@@ -37,24 +37,32 @@ El backend expone una API REST que procesa cada una de estas acciones, se comuni
 
 ## Ejecución
 
-Con Node.js instalado en la máquina donde reside `server.js`:
+### Requisitos
 
-### Linux / macOS
+- Node.js \>= 18
+- npm
+
+### Instalación de dependencias
 
 ```bash
-node server.js
+npm install
 ```
 
-### Windows
+### Inicio rápido
 
-1.  Instala [Node.js](https://nodejs.org/) si aún no lo tienes.
-2.  Abre **PowerShell** o **CMD** y navega hasta la carpeta del proyecto.
-3.  Ejecuta:
-
-<!-- end list -->
-
-```powershell
-node server.js
+```bash
+npm start
 ```
 
-Tras ejecutar el servidor, abre `index.html` en tu navegador para usar la interfaz.
+El servidor Express quedará escuchando en `http://localhost:3000`. Abre `index.html` en tu navegador para usar la interfaz.
+
+### Ejecutar desde GitHub
+
+La interfaz web (`index.html` y `script.js`) puede publicarse en **GitHub Pages** para probarla sin descarga local. Para ejecutar el backend se recomienda usar **GitHub Codespaces** o un contenedor remoto donde se ejecute `npm start`.
+
+## Manual rápido de funciones
+
+- **Instalación automática:** soporta servidores *Vanilla*, *Paper* y *Fabric*. Al elegir Fabric aparece un botón con una guía para instalar mods.
+- **Consola de logs en vivo:** muestra la salida real del proceso de `screen`. Desde la misma vista se pueden exportar `latest.log` o el `screenlog` y abrir una consola interactiva.
+- **Consola interactiva:** botón "Abrir consola" abre una ventana con comandos comunes y opción para exportar el log de `screen` sin salir.
+- **Gestión completa:** control del servicio, edición de `server.properties`, administración de jugadores, backups, y apertura de firewall en VPS y OCI.

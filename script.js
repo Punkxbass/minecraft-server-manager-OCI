@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sshKeyContent: null,
         lastStatusOutput: '',
         resourceMonitorInterval: null,
+        screenEventSource: null,
     };
 
     // --- Selectores de Elementos ---
@@ -68,6 +69,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const backupOutput = document.getElementById('backup-output');
     const backupsList = document.getElementById('backups-list');
     const exportLatestLogBtn = document.getElementById('export-latest-log-btn');
+    const openScreenConsoleBtn = document.getElementById('open-screen-console-btn');
+    const exportScreenLogBtnMain = document.getElementById('export-screen-log-btn-main');
+    const screenConsoleModal = document.getElementById('screen-console-modal');
+    const screenConsoleCloseBtn = document.getElementById('screen-console-close-btn');
+    const screenConsoleLog = document.getElementById('screen-console-log');
+    const screenConsoleInput = document.getElementById('screen-console-input');
+    const screenConsoleSend = document.getElementById('screen-console-send');
+    const screenCmdBtns = document.querySelectorAll('.screen-cmd-btn');
+    const screenExportLogBtn = document.getElementById('screen-export-log-btn');
+    const modsGuideBtn = document.getElementById('mods-guide-btn');
 
     // --- Lógica de Modales ---
     const showModal = (title, content, footerContent = '') => {
@@ -82,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.addEventListener('click', (e) => e.target === modal && hideModal());
     const showInstallerModal = () => installerModal.classList.remove('hidden');
     const hideInstallerModal = () => installerModal.classList.add('hidden');
-    openInstallerBtn.addEventListener('click', () => { populateVersionDropdowns(); showInstallerModal(); });
+    openInstallerBtn.addEventListener('click', () => { handleServerTypeChange(); showInstallerModal(); });
     installerCloseBtn.addEventListener('click', hideInstallerModal);
     installServerBtn.addEventListener('click', async () => {
         const serverType = serverTypeSelect.value;
@@ -136,7 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
     connectBtn.addEventListener('click', connectToServer);
     disconnectBtn.addEventListener('click', () => {
         if (state.connectionId) apiCall('/api/disconnect', { connectionId: state.connectionId });
-        stopLiveLogs(); stopResourceMonitor(); state.connectionId = null; state.sshKeyContent = null;
+        stopLiveLogs(); stopResourceMonitor(); stopScreenConsole();
+        state.connectionId = null; state.sshKeyContent = null;
         sshKeyFileName.textContent = ''; logConsole.innerHTML = ''; notificationArea.innerHTML = '';
         mainView.classList.add('hidden'); loginView.classList.remove('hidden');
     });
@@ -174,6 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
               const cfg = JSON.parse(await file.text());
               serverTypeSelect.value = cfg.serverType || 'vanilla';
               await populateVersionDropdowns();
+              modsGuideBtn.classList.toggle('hidden', serverTypeSelect.value !== 'fabric');
               if (cfg.mcVersion) minecraftVersionSelect.value = cfg.mcVersion;
               Object.entries(cfg.properties || {}).forEach(([k, v]) => {
                   const el = document.getElementById(`prop-${k}`);
@@ -310,12 +323,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.connectionId) return;
         try {
             const res = await fetch(`http://localhost:3000/api/get-latest-log?connectionId=${state.connectionId}`);
-            const text = await res.text();
-            downloadFile('latest.log', text);
+            const data = await res.json();
+            downloadFile('latest.log', data.logContent || '');
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
-    
+    async function exportScreenLog() {
+        if (!state.connectionId) return;
+        try {
+            const res = await fetch(`http://localhost:3000/api/get-screen-log?connectionId=${state.connectionId}`);
+            const data = await res.json();
+            downloadFile('screenlog.0', data.logContent || '');
+        } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
+    }
+
     exportLatestLogBtn.addEventListener('click', exportLatestLog);
+    exportScreenLogBtnMain.addEventListener('click', exportScreenLog);
+    openScreenConsoleBtn.addEventListener('click', () => { screenConsoleLog.textContent=''; openScreenConsole(); });
+    screenConsoleCloseBtn.addEventListener('click', closeScreenConsole);
+    screenConsoleModal.addEventListener('click', (e) => { if (e.target === screenConsoleModal) closeScreenConsole(); });
+    screenConsoleSend.addEventListener('click', () => { sendCommand(screenConsoleInput.value.trim()); screenConsoleInput.value=''; });
+    screenConsoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendCommand(screenConsoleInput.value.trim()); screenConsoleInput.value=''; }});
+    screenCmdBtns.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.command)));
+    screenExportLogBtn.addEventListener('click', exportScreenLog);
+    serverTypeSelect.addEventListener('change', handleServerTypeChange);
+    modsGuideBtn.addEventListener('click', async () => {
+        try {
+            const data = await apiCall('/api/get-guide?file=guia_mods.md', {}, 'GET');
+            showModal('Instalar mods', data.content);
+        } catch (error) {
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
+        }
+    });
     commandPresetBtns.forEach(btn => btn.addEventListener('click', () => sendCommand(btn.dataset.command)));
     sendCommandBtn.addEventListener('click', () => sendCommand(commandInput.value.trim()));
     commandInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCommand(commandInput.value.trim()); });
@@ -348,6 +386,21 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
     function stopLiveLogs() { if (state.eventSource) { state.eventSource.close(); state.eventSource = null; } }
+    function startScreenConsole() {
+        stopScreenConsole();
+        const url = `http://localhost:3000/api/live-logs?connectionId=${state.connectionId}`;
+        state.screenEventSource = new EventSource(url);
+        state.screenEventSource.onmessage = (event) => {
+            const p = document.createElement('p');
+            p.textContent = event.data;
+            screenConsoleLog.appendChild(p);
+            screenConsoleLog.scrollTop = screenConsoleLog.scrollHeight;
+        };
+        state.screenEventSource.onerror = () => stopScreenConsole();
+    }
+    function stopScreenConsole() { if (state.screenEventSource) { state.screenEventSource.close(); state.screenEventSource = null; } }
+    function openScreenConsole() { startScreenConsole(); screenConsoleModal.classList.remove('hidden'); }
+    function closeScreenConsole() { stopScreenConsole(); screenConsoleModal.classList.add('hidden'); }
     async function populateVersionDropdowns() {
         const type = serverTypeSelect.value;
         minecraftVersionSelect.innerHTML = '<option value="">Cargando...</option>';
@@ -355,6 +408,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await apiCall(`/api/minecraft-versions?type=${type}`, {}, 'GET');
             minecraftVersionSelect.innerHTML = data.versions.map(v => `<option value="${v}">${v}</option>`).join('');
         } catch { minecraftVersionSelect.innerHTML = '<option value="">Error</option>'; }
+    }
+    function handleServerTypeChange() {
+        populateVersionDropdowns();
+        modsGuideBtn.classList.toggle('hidden', serverTypeSelect.value !== 'fabric');
     }
 
       openFirewallBtn.addEventListener('click', async () => {

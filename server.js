@@ -6,7 +6,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const { Client } = require('ssh2');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) => globalThis.fetch(...args);
 
 const app = express();
 const port = 3000;
@@ -47,7 +47,7 @@ function execSshCommand(conn, command, streamRes = null) {
 // =============================
 app.get('/api/get-guide', async (req, res) => {
   const { file } = req.query;
-  if (!file || !['guia_vps_oci.md', 'guia_oci_cli.md', 'guia_minecraft_manual.md'].includes(file)) {
+  if (!file || !['guia_vps_oci.md', 'guia_oci_cli.md', 'guia_minecraft_manual.md', 'guia_mods.md'].includes(file)) {
     return res.status(400).json({ message: 'Archivo de guía no válido.' });
   }
   try {
@@ -126,7 +126,7 @@ app.post('/api/install-server', (req, res) => {
   const installScript = `
 #!/bin/bash
 set -e
-exec > >(tee /dev/tty) 2>&1
+exec > >(tee /dev/stdout) 2>&1
 
 SERVER_DIR=${SERVER_PATH_BASE(sshData.sshUser)}
 JAR_NAME="server.jar"
@@ -157,8 +157,8 @@ echo "Firewall del sistema operativo configurado y activado."
 
 echo "Paso 3: Descargando archivos del servidor..."
 if [ "${serverType}" == "vanilla" ]; then
-  MANIFEST_URL=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r ".versions[] | select(.id == \"${mcVersion}\") | .url")
-  DOWNLOAD_URL=$(curl -s $MANIFEST_URL | jq -r ".downloads.server.url")
+  MANIFEST_URL=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r --arg ver "${mcVersion}" '.versions[] | select(.id == $ver) | .url')
+  DOWNLOAD_URL=$(curl -s $MANIFEST_URL | jq -r '.downloads.server.url')
   wget -q --show-progress -O server.jar $DOWNLOAD_URL
 elif [ "${serverType}" == "paper" ]; then
   BUILD=$(curl -s https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds | jq -r '.builds[-1].build')
@@ -195,7 +195,7 @@ Nice=1
 KillMode=none
 SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
-ExecStart=/usr/bin/screen -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
+ExecStart=/usr/bin/screen -L -Logfile $SERVER_DIR/screenlog.0 -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
 ExecStop=/usr/bin/screen -p 0 -S minecraft -X eval "stuff \"stop\\015\""
 [Install]
 WantedBy=multi-user.target
@@ -283,13 +283,26 @@ app.get('/api/get-latest-log', async (req, res) => {
   }
 });
 
+app.get('/api/get-screen-log', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/screenlog.0`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, `cat ${logPath}`);
+    res.json({ success: true, logContent: output });
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo leer el log de screen: ${error.message}` });
+  }
+});
+
 app.get('/api/live-logs', (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).end('Conexión no encontrada.');
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
   const heartbeat = setInterval(() => res.write(':ping\n\n'), 15000);
-  const command = `tail -F -n 50 ${SERVER_PATH_BASE(sshData.sshUser)}/logs/latest.log`;
+  const command = `tail -F -n 50 ${SERVER_PATH_BASE(sshData.sshUser)}/screenlog.0`;
   sshData.conn.exec(command, (err, stream) => {
     if (err) {
       res.write(`data: [ERROR] No se pudo acceder al archivo de logs.\n\n`);
