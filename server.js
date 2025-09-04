@@ -128,7 +128,7 @@ app.post('/api/install-server', (req, res) => {
 set -e
 LOG_FILE=/home/${sshData.sshUser}/install.log
 rm -f $LOG_FILE
-exec > >(tee -a $LOG_FILE /dev/stdout) 2>&1
+exec >>$LOG_FILE 2>&1
 
 SERVER_DIR=${SERVER_PATH_BASE(sshData.sshUser)}
 JAR_NAME="server.jar"
@@ -197,8 +197,10 @@ Nice=1
 KillMode=control-group
 SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
-ExecStart=/usr/bin/screen -L -Logfile $SERVER_DIR/screen.log -S minecraft -d -m /bin/bash $SERVER_DIR/start.sh
-ExecStop=/usr/bin/screen -p 0 -S minecraft -X eval "stuff \"stop\\015\""
+Type=forking
+RemainAfterExit=yes
+ExecStart=/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
+ExecStop=/usr/bin/screen -S minecraft -p 0 -X eval "stuff \"stop\\015\""
 [Install]
 WantedBy=multi-user.target
 _SERVICE
@@ -305,6 +307,20 @@ app.get('/api/get-screen-log', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ message: `No se pudo leer el log de screen: ${error.message}` });
+  }
+});
+
+app.get('/api/get-vps-log', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const installLog = `/home/${sshData.sshUser}/install.log`;
+  const command = `cat /var/log/syslog /var/log/cloud-init-output.log ${installLog}`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, command);
+    res.json({ success: true, logContent: output });
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo leer los logs del VPS: ${error.message}` });
   }
 });
 

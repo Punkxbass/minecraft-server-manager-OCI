@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const createBackupBtn = document.getElementById('create-backup-btn');
     const backupOutput = document.getElementById('backup-output');
     const backupsList = document.getElementById('backups-list');
-    const exportLatestLogBtn = document.getElementById('export-latest-log-btn');
+    const exportVpsLogBtn = document.getElementById('export-vps-log-btn');
     const openScreenConsoleBtn = document.getElementById('open-screen-console-btn');
     const exportScreenLogBtnMain = document.getElementById('export-screen-log-btn-main');
     const screenConsoleModal = document.getElementById('screen-console-modal');
@@ -366,12 +366,12 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url); a.remove();
     }
     function exportSessionLog() { downloadFile(`status-log-${new Date().toISOString()}.txt`, state.lastStatusOutput); }
-    async function exportLatestLog() {
+    async function exportVpsLog() {
         if (!state.connectionId) return;
         try {
-            const res = await fetch(`/api/get-latest-log?connectionId=${state.connectionId}`);
+            const res = await fetch(`/api/get-vps-log?connectionId=${state.connectionId}`);
             const data = await res.json();
-            downloadFile('latest.log', data.logContent || '');
+            downloadFile('vps.log', data.logContent || '');
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
     async function exportScreenLog() {
@@ -383,7 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
 
-    exportLatestLogBtn.addEventListener('click', exportLatestLog);
+    exportVpsLogBtn.addEventListener('click', exportVpsLog);
     exportScreenLogBtnMain.addEventListener('click', exportScreenLog);
     openScreenConsoleBtn.addEventListener('click', () => { screenConsoleLog.textContent=''; openScreenConsole(); });
     screenConsoleCloseBtn.addEventListener('click', closeScreenConsole);
