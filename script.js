@@ -45,6 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const installerCloseBtn = document.getElementById('installer-close-btn');
     const serverTypeSelect = document.getElementById('server-type');
     const minecraftVersionSelect = document.getElementById('minecraft-version');
+    const minRamInput = document.getElementById('min-ram');
+    const maxRamInput = document.getElementById('max-ram');
     const installerOutput = document.getElementById('installer-output');
     const installServerBtn = document.getElementById('install-server-btn');
     const commandInput = document.getElementById('command-input');
@@ -101,6 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const serverType = serverTypeSelect.value;
         const mcVersion = minecraftVersionSelect.value;
         const properties = collectInstallerProperties();
+        const minRam = minRamInput.value.trim();
+        const maxRam = maxRamInput.value.trim();
         if (!serverType || !mcVersion) { installerOutput.textContent = 'Debe seleccionar tipo y versión.'; return; }
         installerOutput.textContent = '';
         installServerBtn.disabled = true;
@@ -108,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/install-server', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties })
+                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties, minRam, maxRam })
             });
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
@@ -236,6 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
               await populateVersionDropdowns();
               modsGuideBtn.classList.toggle('hidden', serverTypeSelect.value !== 'fabric');
               if (cfg.mcVersion) minecraftVersionSelect.value = cfg.mcVersion;
+              minRamInput.value = cfg.minRam || '4G';
+              maxRamInput.value = cfg.maxRam || '8G';
               Object.entries(cfg.properties || {}).forEach(([k, v]) => {
                   const el = document.getElementById(`prop-${k}`);
                   if (el) el.value = v;
@@ -246,6 +252,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const preset = {
               serverType: serverTypeSelect.value,
               mcVersion: minecraftVersionSelect.value,
+              minRam: minRamInput.value.trim(),
+              maxRam: maxRamInput.value.trim(),
               properties: collectInstallerProperties()
           };
           downloadFile('server-preset.json', JSON.stringify(preset, null, 2));
