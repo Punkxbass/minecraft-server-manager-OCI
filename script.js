@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const API_BASE = '';
     const state = {
         connectionId: null,
         eventSource: null,
@@ -87,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!serverType || !mcVersion) { installerOutput.textContent = 'Debe seleccionar tipo y versión.'; return; }
         installerOutput.textContent = ''; installServerBtn.disabled = true;
         try {
-            const res = await fetch('http://localhost:3000/api/install-server', {
+            const res = await fetch(`${API_BASE}/api/install-server`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties: {} })
@@ -110,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const options = { method, headers: { 'Content-Type': 'application/json' }};
             if (method !== 'GET') options.body = JSON.stringify(body);
-            const response = await fetch(`http://localhost:3000${endpoint}`, options);
+            const response = await fetch(`${API_BASE}${endpoint}`, options);
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Error en el servidor');
             return data;
@@ -195,7 +196,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 cpuUsageEl.textContent = stats.CPU_USAGE ? `${stats.CPU_USAGE}%` : 'N/A';
                 ramUsageEl.textContent = stats.RAM_DATA || 'N/A';
                 diskUsageEl.textContent = stats.DISK_DATA || 'N/A';
-            } catch {}
+            } catch (err) {
+                console.error('Resource monitor error', err);
+            }
         }, 5000);
     }
     function stopResourceMonitor() {
@@ -272,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function exportLatestLog() {
         if (!state.connectionId) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/get-latest-log?connectionId=${state.connectionId}`);
+            const res = await fetch(`${API_BASE}/api/get-latest-log?connectionId=${state.connectionId}`);
             const text = await res.text();
             downloadFile('latest.log', text);
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
@@ -294,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function startLiveLogs() {
         stopLiveLogs();
         logConsole.innerHTML = '<p class="text-yellow-400">Conectando a logs en vivo...</p>';
-        const url = `http://localhost:3000/api/live-logs?connectionId=${state.connectionId}`;
+        const url = `${API_BASE}/api/live-logs?connectionId=${state.connectionId}`;
         state.eventSource = new EventSource(url);
         let firstMessage = true;
         state.eventSource.onopen = () => {
@@ -328,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const oci = await apiCall('/api/open-oci-firewall', { compartmentId });
             let message = `<p>${oci.message}</p>`;
             if (state.connectionId) {
-                const res = await fetch('http://localhost:3000/api/open-ufw', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ connectionId: state.connectionId }) });
+                const res = await fetch(`${API_BASE}/api/open-ufw`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ connectionId: state.connectionId }) });
                 const text = await res.text();
                 message += `<pre class="bg-black p-2 rounded mt-2 whitespace-pre-wrap">${text}</pre>`;
             }
@@ -423,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const body = { connectionId: state.connectionId, action };
             if (file) body.file = file;
-            const res = await fetch('http://localhost:3000/api/backups', {
+            const res = await fetch(`${API_BASE}/api/backups`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
             });
             const reader = res.body.getReader();

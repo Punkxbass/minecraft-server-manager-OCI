@@ -6,8 +6,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const { Client } = require('ssh2');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const marked = require('marked');
+let marked; // will load dynamically when needed
 
 const app = express();
 const port = 3000;
@@ -52,6 +51,7 @@ app.get('/api/get-guide', async (req, res) => {
     return res.status(400).json({ message: 'Archivo de guía no válido.' });
   }
   try {
+    if (!marked) ({ marked } = await import('marked'));
     const filePath = path.join(__dirname, file);
     const content = await fs.readFile(filePath, 'utf-8');
     const htmlContent = marked.parse(content);
@@ -116,6 +116,14 @@ app.post('/api/install-server', (req, res) => {
   const { connectionId, serverType, mcVersion, properties } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+
+  const validTypes = ['vanilla', 'paper', 'fabric'];
+  if (!validTypes.includes(serverType)) {
+    return res.status(400).json({ message: 'Tipo de servidor no válido.' });
+  }
+  if (!/^\d+(\.\d+){1,2}$/.test(mcVersion)) {
+    return res.status(400).json({ message: 'Versión de Minecraft no válida.' });
+  }
 
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' });
 
@@ -616,4 +624,8 @@ process.on('SIGINT', () => {
   process.exit();
 });
 
-app.listen(port, () => console.log(`Servidor escuchando en http://localhost:${port}`));
+if (require.main === module) {
+  app.listen(port, () => console.log(`Servidor escuchando en http://localhost:${port}`));
+}
+
+module.exports = app;
