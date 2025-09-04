@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Manager OCI</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .log-console { height: 400px; }
+        .modal { transition: opacity 0.25s ease; }
+        .modal-content { transition: transform 0.25s ease; }
+        .prose h1, .prose h2 { color: #fff; border-bottom: 1px solid #4a5568; padding-bottom: 0.5rem; margin-top: 1.5rem; }
+        .prose h3 { color: #6ee7b7; font-size: 1.25em; margin-top: 1.5rem; }
+        .prose p { margin-bottom: 1rem; line-height: 1.6; color: #cbd5e0; }
+        .prose code { background-color: #4a5568; color: #fcd34d; padding: 0.2em 0.4em; border-radius: 0.375rem; font-family: 'Fira Code','JetBrains Mono',monospace; font-size: 0.9em; }
+        .prose pre { background-color: #1a202c; color: #e2e8f0; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 1rem; margin-bottom: 1rem; white-space: pre-wrap; }
+        .prose a { color: #2dd4bf; text-decoration: underline; }
+        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .prose strong { color: #fff; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen">
+    <div id="app" class="w-full max-w-6xl mx-auto p-4 md:p-8">
+        <div id="login-view">
+            <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-lg mx-auto">
+                <h1 class="text-3xl font-bold text-center mb-2 text-white">Minecraft Server Manager</h1>
+                <p class="text-gray-400 text-center mb-6">Gestiona tu servidor en Oracle Cloud</p>
+                <div class="space-y-4">
+                    <input type="text" id="vps-ip" placeholder="IP Pública del VPS" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <input type="text" id="ssh-user" placeholder="Usuario SSH (ej: ubuntu)" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <div class="flex items-center gap-3">
+                        <button id="ssh-key-upload-btn" class="w-full text-center bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 hover:bg-gray-600 transition">Cargar Llave SSH (.pem / .ppk)</button>
+                        <input type="file" id="ssh-key-input" class="hidden" accept=".pem,.ppk,.key">
+                    </div>
+                    <p id="ssh-key-file-name" class="text-sm text-center text-gray-400 h-5"></p>
+                </div>
+                <div class="mt-4 flex flex-col sm:flex-row gap-4">
+                    <button id="connect-btn" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 flex items-center justify-center">Conectar</button>
+                </div>
+                <div class="mt-4 flex flex-col sm:flex-row gap-3">
+                    <button id="import-config-btn" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">Importar y Conectar</button>
+                    <input type="file" id="config-file-input" class="hidden" accept=".json">
+                </div>
+                <div id="login-error" class="text-red-400 mt-4 text-center h-5"></div>
+                <div class="mt-8 pt-6 border-top border-gray-700">
+                    <h3 class="text-lg font-bold mb-4 text-center text-gray-300">¿Necesitas ayuda?</h3>
+                    <div class="space-y-3">
+                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="guia_vps_oci.md">1. Crear VPS en Oracle Cloud</button>
+                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="guia_oci_cli.md">2. Configurar OCI CLI</button>
+                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="guia_minecraft_manual.md">3. Instalar Minecraft Manualmente</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="main-view" class="hidden">
+            <h2 class="text-4xl font-bold text-white mb-4">Panel de Control</h2>
+            <div id="resource-monitor" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <div class="bg-gray-800 p-4 rounded-lg text-center"><h4 class="text-sm font-bold text-gray-400">USO DE CPU</h4><p id="cpu-usage" class="text-2xl font-semibold text-white mt-1">- %</p></div>
+                <div class="bg-gray-800 p-4 rounded-lg text-center"><h4 class="text-sm font-bold text-gray-400">USO DE RAM</h4><p id="ram-usage" class="text-2xl font-semibold text-white mt-1">- / - MB</p></div>
+                <div class="bg-gray-800 p-4 rounded-lg text-center"><h4 class="text-sm font-bold text-gray-400">USO DE DISCO</h4><p id="disk-usage" class="text-2xl font-semibold text-white mt-1">- / - (-%)</p></div>
+            </div>
+            <div id="server-status-notification" class="mb-6 p-4 rounded-lg text-white font-semibold"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-1 bg-gray-800 rounded-2xl p-6 space-y-6">
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 text-white">Gestión del Servidor</h3>
+                        <button id="open-installer-btn" class="w-full mb-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Instalar / Reinstalar</button>
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            <button data-action="start" class="server-control-btn bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Iniciar</button>
+                            <button data-action="stop" class="server-control-btn bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Detener</button>
+                            <button data-action="restart" class="server-control-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg">Reiniciar</button>
+                            <button data-action="status" class="server-control-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Estado</button>
+                        </div>
+                        <div class="space-y-3">
+                            <button id="edit-properties-btn" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Editar server.properties</button>
+                            <button id="manage-players-btn" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Gestionar Jugadores</button>
+                            <button id="manage-backups-btn" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Sistema de Copias</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 text-white">Firewall y Red de OCI</h3>
+                        <div class="space-y-3">
+                            <input type="text" id="compartment-id" placeholder="OCID del Compartimento (Tenancy)" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
+                            <button id="open-firewall-btn" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Abrir Puerto 25565 y Red</button>
+                        </div>
+                    </div>
+                    <div class="pt-4 border-t border-red-500/30">
+                        <h3 class="text-xl font-bold mb-4 text-red-400">Zona de Peligro</h3>
+                        <button id="deep-clean-btn" class="w-full bg-red-800 hover:bg-red-900 text-white font-bold py-2 px-4 rounded-lg">Eliminar Servidor (Limpieza)</button>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 bg-gray-800 rounded-2xl p-6 flex flex-col">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-white">Consola de Logs en Vivo</h3>
+                        <button id="export-latest-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar latest.log</button>
+                    </div>
+                    <div id="log-console" class="log-console bg-black rounded-lg p-4 font-mono text-sm text-green-400 overflow-y-auto whitespace-pre-wrap flex-grow"></div>
+                    <div class="mt-4 flex gap-2">
+                        <input type="text" id="command-input" placeholder="Escribe un comando para el servidor..." class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        <button id="send-command-btn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Enviar</button>
+                    </div>
+                    <div class="mt-3 flex gap-2">
+                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="list">list</button>
+                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="say El servidor se reiniciará en 1 minuto.">say</button>
+                    </div>
+                    <div class="mt-6 flex items-center justify-between">
+                        <button id="disconnect-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg">Desconectar</button>
+                        <button id="export-config-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">Exportar Configuración Actual</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-70 hidden">
+        <div id="modal-content" class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b border-gray-700">
+                <h3 id="modal-title" class="text-xl font-bold text-white"></h3>
+                <button id="modal-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div id="modal-body" class="p-6 overflow-y-auto"></div>
+            <div id="modal-footer" class="hidden p-4 border-t border-gray-700 bg-gray-800/50 text-right"></div>
+        </div>
+    </div>
+
+    <div id="installer-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[95vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b border-gray-700">
+                <h3 class="text-2xl font-bold text-white">Instalador de Servidor Minecraft</h3>
+                <button id="installer-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div class="flex-grow p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id="installer-form-section">
+                    <div class="space-y-4">
+                        <div>
+                            <label for="server-type" class="block mb-2 text-sm font-medium text-gray-300">Tipo de Servidor</label>
+                            <select id="server-type" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
+                                <option value="vanilla">Vanilla (Oficial)</option>
+                                <option value="paper">Paper (Alto Rendimiento)</option>
+                                <option value="fabric">Fabric (Mods)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="minecraft-version" class="block mb-2 text-sm font-medium text-gray-300">Versión de Minecraft</label>
+                            <select id="minecraft-version" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
+                                <option>Cargando versiones...</option>
+                            </select>
+                        </div>
+                        <div class="pt-4 border-t border-gray-700">
+                            <h4 class="text-lg font-bold mb-3 text-gray-200">Propiedades del Servidor</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-64 overflow-y-auto p-2 bg-gray-900/50 rounded-lg">
+                                <div>
+                                    <label for="prop-server-name" class="text-sm">Nombre del Servidor</label>
+                                    <input type="text" id="prop-server-name" value="Un Servidor de Minecraft" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                </div>
+                                <div>
+                                    <label for="prop-motd" class="text-sm">Mensaje del día (MOTD)</label>
+                                    <input type="text" id="prop-motd" value="A Minecraft Server" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                </div>
+                                <div>
+                                    <label for="prop-gamemode" class="text-sm">Modo de Juego</label>
+                                    <select id="prop-gamemode" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                        <option value="survival">Survival</option>
+                                        <option value="creative">Creative</option>
+                                        <option value="adventure">Adventure</option>
+                                        <option value="spectator">Spectator</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="prop-difficulty" class="text-sm">Dificultad</label>
+                                    <select id="prop-difficulty" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                        <option value="peaceful">Pacífico</option>
+                                        <option value="easy">Fácil</option>
+                                        <option value="normal" selected>Normal</option>
+                                        <option value="hard">Difícil</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="prop-max-players" class="text-sm">Jugadores Máximos</label>
+                                    <input type="number" id="prop-max-players" value="20" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                </div>
+                                <div>
+                                    <label for="prop-pvp" class="text-sm">PVP</label>
+                                    <select id="prop-pvp" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                        <option value="true">Activado</option>
+                                        <option value="false">Desactivado</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="prop-allow-flight" class="text-sm">Permitir Vuelo</label>
+                                    <select id="prop-allow-flight" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                        <option value="false">Desactivado</option>
+                                        <option value="true">Activado</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="prop-white-list" class="text-sm">Whitelist</label>
+                                    <select id="prop-white-list" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                        <option value="false">Desactivado</option>
+                                        <option value="true">Activado</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="prop-enable-command-block" class="text-sm">Bloques de Comandos</label>
+                                    <select id="prop-enable-command-block" class="w-full bg-gray-700 text-sm p-2 rounded">
+                                        <option value="false">Desactivado</option>
+                                        <option value="true">Activado</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="installer-console-section" class="bg-black rounded-lg p-4 font-mono text-sm text-gray-300 overflow-y-auto h-full flex flex-col">
+                    <p class="text-yellow-400">Bienvenido al instalador.</p>
+                    <p class="text-red-500 font-bold">Advertencia: Este proceso eliminará cualquier servidor existente.</p>
+                    <div id="installer-output" class="flex-grow mt-4 whitespace-pre-wrap"></div>
+                </div>
+            </div>
+            <div class="flex justify-between items-center p-4 border-t border-gray-700 bg-gray-800/50">
+                <div class="flex gap-2">
+                    <button id="import-preset-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm">Importar Preset</button>
+                    <button id="export-preset-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm">Exportar Preset</button>
+                    <input type="file" id="preset-file-input" class="hidden" accept=".json">
+                </div>
+                <button id="install-server-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg">Iniciar Instalación</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="properties-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b border-gray-700">
+                <h3 class="text-2xl font-bold text-white">Editor de server.properties</h3>
+                <button id="properties-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div id="properties-body" class="flex-grow p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            <div class="flex justify-end p-4 border-t border-gray-700 bg-gray-800/50">
+                <button id="save-properties-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="players-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b border-gray-700">
+                <h3 class="text-2xl font-bold text-white">Gestión de Jugadores</h3>
+                <button id="players-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div class="flex-grow p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h4 class="text-lg font-bold mb-3">Operadores (OPs)</h4>
+                    <ul id="ops-list" class="space-y-2 mb-4"></ul>
+                    <div class="flex gap-2">
+                        <input type="text" id="op-player-name" placeholder="Nombre del jugador" class="w-full bg-gray-700 p-2 rounded">
+                        <button id="add-op-btn" class="bg-blue-500 px-4 rounded text-white">Añadir</button>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-lg font-bold mb-3">Whitelist</h4>
+                    <ul id="whitelist-list" class="space-y-2 mb-4"></ul>
+                    <div class="flex gap-2">
+                        <input type="text" id="whitelist-player-name" placeholder="Nombre del jugador" class="w-full bg-gray-700 p-2 rounded">
+                        <button id="add-whitelist-btn" class="bg-blue-500 px-4 rounded text-white">Añadir</button>
+                    </div>
+                </div>
+            </div>
+            <div id="players-modal-footer" class="p-4 border-t border-gray-700 text-sm text-gray-400">Los cambios se aplican en tiempo real si el servidor está activo.</div>
+        </div>
+    </div>
+
+    <div id="backups-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b border-gray-700">
+                <h3 class="text-2xl font-bold text-white">Sistema de Copias de Seguridad</h3>
+                <button id="backups-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div class="flex-grow p-6 overflow-y-auto">
+                <div class="mb-4">
+                    <button id="create-backup-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg">Crear Nueva Copia del Mundo</button>
+                </div>
+                <div id="backup-output" class="bg-black rounded-lg p-4 font-mono text-sm text-gray-300 whitespace-pre-wrap hidden mb-4 max-h-48 overflow-y-auto"></div>
+                <h4 class="text-lg font-bold mb-3">Copias Disponibles</h4>
+                <ul id="backups-list" class="bg-gray-900/50 rounded-lg p-2"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
