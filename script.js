@@ -27,6 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const serverControlBtns = document.querySelectorAll('.server-control-btn');
     const openFirewallBtn = document.getElementById('open-firewall-btn');
     const compartmentIdInput = document.getElementById('compartment-id');
+    const importPresetBtn = document.getElementById('import-preset-btn');
+    const exportPresetBtn = document.getElementById('export-preset-btn');
+    const presetFileInput = document.getElementById('preset-file-input');
     const logConsole = document.getElementById('log-console');
     const notificationArea = document.getElementById('server-status-notification');
     const cpuUsageEl = document.getElementById('cpu-usage');
@@ -84,13 +87,14 @@ document.addEventListener('DOMContentLoaded', () => {
     installServerBtn.addEventListener('click', async () => {
         const serverType = serverTypeSelect.value;
         const mcVersion = minecraftVersionSelect.value;
+        const properties = collectInstallerProperties();
         if (!serverType || !mcVersion) { installerOutput.textContent = 'Debe seleccionar tipo y versión.'; return; }
         installerOutput.textContent = ''; installServerBtn.disabled = true;
         try {
             const res = await fetch('http://localhost:3000/api/install-server', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties: {} })
+                body: JSON.stringify({ connectionId: state.connectionId, serverType, mcVersion, properties })
             });
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
@@ -148,19 +152,43 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadFile('connection-config.json', JSON.stringify(cfg, null, 2));
     });
     importBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0]; if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const cfg = JSON.parse(e.target.result);
-                vpsIpInput.value = cfg.vpsIp || '';
-                sshUserInput.value = cfg.sshUser || '';
-                if (cfg.sshKey) { state.sshKeyContent = cfg.sshKey; sshKeyFileName.textContent = 'Llave importada'; }
-            } catch { alert('Archivo de configuración inválido'); }
-        };
-        reader.readAsText(file);
-    });
+      fileInput.addEventListener('change', (event) => {
+          const file = event.target.files[0]; if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+              try {
+                  const cfg = JSON.parse(e.target.result);
+                  vpsIpInput.value = cfg.vpsIp || '';
+                  sshUserInput.value = cfg.sshUser || '';
+                  if (cfg.sshKey) { state.sshKeyContent = cfg.sshKey; sshKeyFileName.textContent = 'Llave importada'; }
+                  await connectToServer();
+              } catch { alert('Archivo de configuración inválido'); }
+          };
+          reader.readAsText(file);
+      });
+
+      importPresetBtn.addEventListener('click', () => presetFileInput.click());
+      presetFileInput.addEventListener('change', async (event) => {
+          const file = event.target.files[0]; if (!file) return;
+          try {
+              const cfg = JSON.parse(await file.text());
+              serverTypeSelect.value = cfg.serverType || 'vanilla';
+              await populateVersionDropdowns();
+              if (cfg.mcVersion) minecraftVersionSelect.value = cfg.mcVersion;
+              Object.entries(cfg.properties || {}).forEach(([k, v]) => {
+                  const el = document.getElementById(`prop-${k}`);
+                  if (el) el.value = v;
+              });
+          } catch { alert('Preset inválido'); }
+      });
+      exportPresetBtn.addEventListener('click', () => {
+          const preset = {
+              serverType: serverTypeSelect.value,
+              mcVersion: minecraftVersionSelect.value,
+              properties: collectInstallerProperties()
+          };
+          downloadFile('server-preset.json', JSON.stringify(preset, null, 2));
+      });
     guideBtns.forEach(btn => btn.addEventListener('click', async () => {
         const file = btn.dataset.file;
         try {
@@ -261,7 +289,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function downloadFile(filename, content) {
+      function collectInstallerProperties() {
+          const inputs = document.querySelectorAll('#installer-form-section [id^="prop-"]');
+          return Array.from(inputs).reduce((acc, el) => {
+              const key = el.id.replace('prop-', '');
+              acc[key] = el.value;
+              return acc;
+          }, {});
+      }
+
+      function downloadFile(filename, content) {
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), { href: url, download: filename });
@@ -320,8 +357,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch { minecraftVersionSelect.innerHTML = '<option value="">Error</option>'; }
     }
 
-    openFirewallBtn.addEventListener('click', async () => {
-        const compartmentId = compartmentIdInput.value.trim();
+      openFirewallBtn.addEventListener('click', async () => {
+          const compartmentId = compartmentIdInput.value.trim();
         if (!compartmentId) { showModal('Firewall', '<p class="text-red-400">Debes proporcionar el OCID del compartimento.</p>'); return; }
         showModal('Abriendo puertos', '<p>Configurando firewall en OCI y VPS...</p>');
         try {
@@ -336,9 +373,38 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
-    });
+      });
 
-    // --- Gestión de jugadores ---
+      editPropertiesBtn.addEventListener('click', async () => {
+          propertiesModal.classList.remove('hidden');
+          propertiesBody.innerHTML = '<p>Cargando...</p>';
+          try {
+              const data = await apiCall(`/api/get-properties?connectionId=${state.connectionId}`, {}, 'GET');
+              propertiesBody.innerHTML = '';
+              Object.entries(data.properties || {}).forEach(([key, value]) => {
+                  const div = document.createElement('div');
+                  div.innerHTML = `<label for="propedit-${key}" class="text-sm">${key}</label><input id="propedit-${key}" data-key="${key}" value="${value}" class="w-full bg-gray-700 text-sm p-2 rounded">`;
+                  propertiesBody.appendChild(div);
+              });
+          } catch (error) {
+              propertiesBody.innerHTML = `<p class="text-red-400">${error.message}</p>`;
+          }
+      });
+      propertiesCloseBtn.addEventListener('click', () => propertiesModal.classList.add('hidden'));
+      savePropertiesBtn.addEventListener('click', async () => {
+          const inputs = propertiesBody.querySelectorAll('input');
+          const props = {};
+          inputs.forEach(i => props[i.dataset.key] = i.value);
+          try {
+              await apiCall('/api/save-properties', { connectionId: state.connectionId, properties: props });
+              propertiesModal.classList.add('hidden');
+              showModal('Propiedades', '<p>server.properties actualizado.</p>');
+          } catch (err) {
+              alert(err.message);
+          }
+      });
+
+      // --- Gestión de jugadores ---
     managePlayersBtn.addEventListener('click', loadPlayersModal);
     playersCloseBtn.addEventListener('click', () => playersModal.classList.add('hidden'));
     async function loadPlayersModal() {

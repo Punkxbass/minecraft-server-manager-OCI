@@ -6,8 +6,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const { Client } = require('ssh2');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const marked = require('marked');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const port = 3000;
@@ -54,6 +53,7 @@ app.get('/api/get-guide', async (req, res) => {
   try {
     const filePath = path.join(__dirname, file);
     const content = await fs.readFile(filePath, 'utf-8');
+    const { marked } = await import('marked');
     const htmlContent = marked.parse(content);
     res.json({ success: true, content: htmlContent });
   } catch (err) {
@@ -162,7 +162,7 @@ if [ "${serverType}" == "vanilla" ]; then
   wget -q --show-progress -O server.jar $DOWNLOAD_URL
 elif [ "${serverType}" == "paper" ]; then
   BUILD=$(curl -s https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds | jq -r '.builds[-1].build')
-  DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/${BUILD}/downloads/paper-${mcVersion}-${BUILD}.jar"
+  DOWNLOAD_URL="https://api.papermc.io/v2/projects/paper/versions/${mcVersion}/builds/\${BUILD}/downloads/paper-${mcVersion}-\${BUILD}.jar"
   wget -q --show-progress -O server.jar "$DOWNLOAD_URL"
 elif [ "${serverType}" == "fabric" ]; then
   FABRIC_INSTALLER_URL=$(curl -s "https://meta.fabricmc.net/v2/versions/installer" | jq -r '.[0].url')
