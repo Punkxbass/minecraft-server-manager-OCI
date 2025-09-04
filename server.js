@@ -6,8 +6,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const { Client } = require('ssh2');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const marked = require('marked');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const port = 3000;
@@ -54,6 +53,7 @@ app.get('/api/get-guide', async (req, res) => {
   try {
     const filePath = path.join(__dirname, file);
     const content = await fs.readFile(filePath, 'utf-8');
+    const { marked } = await import('marked');
     const htmlContent = marked.parse(content);
     res.json({ success: true, content: htmlContent });
   } catch (err) {
