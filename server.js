@@ -192,32 +192,29 @@ echo -e "${propertiesString}" > server.properties
 echo "enable-rcon=false" >> server.properties
 
 log "Paso 5/6: Creando script de inicio (start.sh)..."
-cat > start.sh << '_SCRIPT'
+cat > start.sh << _SCRIPT
 #!/bin/bash
-java -Xms${minRamSafe} -Xmx${maxRamSafe} -jar \${JAR_NAME} nogui
+/usr/bin/java -Xmx${maxRamSafe} -Xms${minRamSafe} -jar \${JAR_NAME} nogui
 _SCRIPT
 chmod +x start.sh
 
-log "Paso 6/6: Creando servicio de systemd con screen..."
+log "Paso 6/6: Creando servicio de systemd..."
 cat << _SERVICE > minecraft.service.tmp
 [Unit]
 Description=Minecraft Server (${serverType} ${mcVersion})
 After=network.target
 
 [Service]
-Type=forking
-User=${sshData.sshUser}
-WorkingDirectory=$SERVER_DIR
-ExecStart=/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
-ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -p 0 -X stuff "stop\\n" 2>/dev/null || true'
-ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -X quit 2>/dev/null || true'
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/minecraft-server
+ExecStart=/usr/bin/java -Xmx${maxRamSafe} -Xms${minRamSafe} -jar \${JAR_NAME} nogui
 Restart=on-failure
-SuccessExitStatus=0 1
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 _SERVICE
-sudo mv minecraft.service.tmp /etc/systemd/system/minecraft.service
 sudo systemctl daemon-reload
 sudo systemctl enable minecraft
 sudo systemctl start minecraft
