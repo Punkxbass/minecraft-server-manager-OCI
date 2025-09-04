@@ -192,7 +192,6 @@ _SCRIPT
 chmod +x start.sh
 
 log "Paso 6/6: Creando servicio de systemd con screen..."
-PID_FILE="$SERVER_DIR/minecraft.pid"
 cat << _SERVICE > minecraft.service.tmp
 [Unit]
 Description=Minecraft Server (${serverType} ${mcVersion})
@@ -200,15 +199,12 @@ After=network.target
 
 [Service]
 User=${sshData.sshUser}
-Nice=1
-KillMode=control-group
-SuccessExitStatus=0 1
 WorkingDirectory=$SERVER_DIR
-Type=forking
-PIDFile=$PID_FILE
-RemainAfterExit=yes
-ExecStart=/bin/bash -c '/usr/bin/screen -dmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh; sleep 1; screen -list | grep "\\.minecraft" | head -n1 | cut -d. -f1 | tr -d "\\t" > $PID_FILE'
-ExecStop=/bin/bash -c '/usr/bin/screen -S minecraft -p 0 -X eval "stuff \\\"stop\\015\\""; sleep 5; /usr/bin/screen -S minecraft -X quit'
+ExecStart=/usr/bin/screen -DmS minecraft -L -Logfile $SERVER_DIR/screen.log /bin/bash $SERVER_DIR/start.sh
+ExecStop=/usr/bin/screen -S minecraft -p 0 -X stuff "stop\\n"
+ExecStop=/usr/bin/screen -S minecraft -X quit
+Restart=on-failure
+SuccessExitStatus=0 1
 
 [Install]
 WantedBy=multi-user.target
@@ -331,6 +327,21 @@ app.get('/api/get-vps-log', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: `No se pudo leer los logs del VPS: ${error.message}` });
   }
+});
+
+app.get('/api/download-install-log', (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const remotePath = `/home/${sshData.sshUser}/install.log`;
+  sshData.conn.sftp((err, sftp) => {
+    if (err) return res.status(500).json({ message: 'Error SFTP.' });
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename=install.log');
+    const stream = sftp.createReadStream(remotePath);
+    stream.on('error', error => res.status(500).end(`Error al leer log: ${error.message}`));
+    stream.pipe(res);
+  });
 });
 
 app.get('/api/export-server', async (req, res) => {
@@ -721,7 +732,7 @@ app.post('/api/reboot-vps', async (req, res) => {
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   try {
-    await execSshCommand(sshData.conn, `sudo nohup bash -c 'sleep 1 && reboot' >/dev/null 2>&1 &`);
+    await execSshCommand(sshData.conn, `sudo nohup systemctl reboot >/dev/null 2>&1 &`);
     res.json({ success: true, message: 'VPS reiniciándose.' });
   } catch (error) {
     res.status(500).json({ message: `Error al reiniciar VPS: ${error.message}` });
