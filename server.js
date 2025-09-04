@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const { Client } = require('ssh2');
 const fetch = (...args) => globalThis.fetch(...args);
+const allowedCommands = require('./secureCommands');
 
 const app = express();
 const port = 3000;
@@ -40,6 +41,29 @@ function execSshCommand(conn, command, streamRes = null) {
       });
     });
   });
+}
+
+async function executeSecureCommand(conn, commandKey, userArgs = []) {
+  const commandConfig = allowedCommands[commandKey];
+  if (!commandConfig) {
+    throw new Error(`Comando no permitido: ${commandKey}`);
+  }
+
+  const sanitizedArgs = (userArgs || []).map(arg => {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(String(arg))) {
+      throw new Error('Argumento inválido detectado.');
+    }
+    return String(arg);
+  });
+
+  const finalArgs = [...commandConfig.args, ...sanitizedArgs];
+  const commandString = `${commandConfig.cmd} ${finalArgs.join(' ')}`.trim();
+
+  const { code, output, error } = await execSshCommand(conn, commandString);
+  if (code !== 0) {
+    throw new Error(error || 'Error ejecutando comando remoto');
+  }
+  return output;
 }
 
 // =============================
@@ -749,6 +773,36 @@ app.post('/api/open-oci-firewall', async (req, res) => {
 // =============================
 // Comandos rápidos de la VPS
 // =============================
+app.post('/api/server/control', async (req, res) => {
+  const { connectionId, action } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+
+  const mapping = { start: 'START_SERVER', stop: 'STOP_SERVER', restart: 'RESTART_SERVER' };
+  const commandKey = mapping[action];
+  if (!commandKey) return res.status(400).json({ message: 'Acción inválida.' });
+
+  try {
+    await executeSecureCommand(sshData.conn, commandKey);
+    res.json({ success: true, message: `Comando ${action} ejecutado.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/ban', async (req, res) => {
+  const { connectionId, playerName } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+
+  try {
+    await executeSecureCommand(sshData.conn, 'BAN_PLAYER', [playerName]);
+    res.json({ success: true, message: `Jugador ${playerName} baneado.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 app.post('/api/clear-console', async (req, res) => {
   const { connectionId } = req.body;
   const sshData = sshConnections.get(connectionId);
@@ -768,7 +822,7 @@ app.post('/api/reboot-vps', async (req, res) => {
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   try {
-    await execSshCommand(sshData.conn, `sudo /sbin/reboot >/dev/null 2>&1 &`);
+    await executeSecureCommand(sshData.conn, 'REBOOT_VPS');
     res.json({ success: true, message: 'VPS reiniciándose.' });
   } catch (error) {
     res.status(500).json({ message: `Error al reiniciar VPS: ${error.message}` });
