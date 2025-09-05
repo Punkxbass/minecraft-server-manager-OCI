@@ -2,10 +2,10 @@
   "name": "minecraft-server-manager-oci",
   "version": "1.0.0",
   "description": "Se consolidaron tres prototipos en una única base de código funcional compuesta por `index.html`, `script.js` y `server.js`. Esta herramienta permite administrar de forma remota un servidor de Minecraft alojado en Oracle Cloud Infrastructure.",
-  "main": "script.js",
+  "main": "src/server.js",
   "scripts": {
-    "test": "node --check server.js && node --check script.js",
-    "start": "node server.js"
+    "test": "node --check src/server.js && node --check src/public/script.js",
+    "start": "node src/server.js"
   },
   "keywords": [],
   "author": "",

@@ -8,6 +8,13 @@ document.addEventListener('DOMContentLoaded', () => {
         vpsSocket: null,
     };
 
+    const CONSOLE_BUFFER_LIMIT = 1000;
+    let consoleBuffer = [];
+    const addToBuffer = (line) => {
+        if (consoleBuffer.length >= CONSOLE_BUFFER_LIMIT) consoleBuffer.shift();
+        consoleBuffer.push(line);
+    };
+
     // --- Selectores de Elementos ---
     const loginView = document.getElementById('login-view');
     const mainView = document.getElementById('main-view');
@@ -73,9 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileExplorerBody = document.getElementById('file-explorer-body');
     const clearConsoleBtn = document.getElementById('clear-console-btn');
     const rebootVpsBtn = document.getElementById('reboot-vps-btn');
-    const downloadConsoleLogBtn = document.getElementById('download-console-log-btn');
     const downloadScreenLogBtn = document.getElementById('download-screen-log-btn');
     const downloadVpsLogBtn = document.getElementById('download-vps-log-btn');
+    const downloadCompleteLogBtn = document.getElementById('download-complete-log-btn');
     const attachMinecraftScreenBtn = document.getElementById('attach-minecraft-screen');
     const detachMinecraftScreenBtn = document.getElementById('detach-minecraft-screen');
     const quickCommandInput = document.getElementById('quick-command-input');
@@ -407,17 +414,9 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url); a.remove();
     }
     function exportSessionLog() { downloadFile(`status-log-${new Date().toISOString()}.txt`, state.lastStatusOutput); }
-    async function downloadConsoleLog() {
-        if (!state.connectionId) return;
-        try {
-            const res = await fetch(`/api/download-console-log?connectionId=${state.connectionId}`);
-            if (!res.ok) throw new Error('No se pudo descargar el log.');
-            const blob = await res.blob();
-            downloadFile('latest.log', blob);
-        } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
-    }
     clearConsoleBtn.addEventListener('click', async () => {
         state.vpsTerm?.clear();
+        consoleBuffer = [];
         try {
             await apiCall('/api/clear-console', { connectionId: state.connectionId });
         } catch (error) {
@@ -433,8 +432,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
-    downloadConsoleLogBtn.addEventListener('click', downloadConsoleLog);
-
     attachMinecraftScreenBtn.addEventListener('click', () => {
         if (state.vpsTerm && state.vpsSocket) {
             state.vpsSocket.send('screen -r minecraft-console\r');
@@ -476,10 +473,20 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
+    downloadCompleteLogBtn.addEventListener('click', async () => {
+        try {
+            const res = await fetch(`/api/download-complete-log?connectionId=${state.connectionId}`);
+            if (!res.ok) throw new Error('No se pudo descargar el log completo.');
+            const blob = await res.blob();
+            downloadFile('complete.log', blob);
+        } catch (error) {
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
+        }
+    });
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
     modsGuideBtn.addEventListener('click', async () => {
         try {
-            const data = await apiCall('/api/get-guide?file=guia_mods.md', {}, 'GET');
+            const data = await apiCall('/api/get-guide?file=mods-guide.md', {}, 'GET');
             showModal('Instalar mods', data.content);
         } catch (error) {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
@@ -508,6 +515,9 @@ document.addEventListener('DOMContentLoaded', () => {
         term.focus();
         vpsConsole.addEventListener('click', () => term.focus());
         socket.addEventListener('open', () => term.focus());
+        socket.addEventListener('message', (e) => {
+            e.data.split(/\r?\n/).forEach(addToBuffer);
+        });
         window.addEventListener('resize', () => fitAddon.fit());
         state.vpsTerm = term;
     }
