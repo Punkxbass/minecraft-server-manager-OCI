@@ -13,7 +13,7 @@ Type=forking
 User=${MC_USER}
 Group=${MC_USER}
 WorkingDirectory=${MC_DIR}
-ExecStart=/usr/bin/screen -dmS minecraft-console bash -c 'exec ${MC_DIR}/start.sh'
+ExecStart=/usr/bin/screen -L -Logfile ${MC_DIR}/screen.log -dmS minecraft-console bash -c 'exec ${MC_DIR}/start.sh'
 ExecStop=/usr/bin/screen -S minecraft-console -X quit
 Restart=on-failure
 RestartSec=10
@@ -24,5 +24,6 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable minecraft.service
+sudo systemctl start minecraft.service
 
-echo "Servicio systemd configurado correctamente"
+echo "Servicio systemd configurado y servidor iniciado correctamente"

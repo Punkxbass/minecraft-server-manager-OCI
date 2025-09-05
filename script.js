@@ -75,6 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rebootVpsBtn = document.getElementById('reboot-vps-btn');
     const downloadConsoleLogBtn = document.getElementById('download-console-log-btn');
     const downloadScreenLogBtn = document.getElementById('download-screen-log-btn');
+    const downloadVpsLogBtn = document.getElementById('download-vps-log-btn');
     const attachMinecraftScreenBtn = document.getElementById('attach-minecraft-screen');
     const detachMinecraftScreenBtn = document.getElementById('detach-minecraft-screen');
     const quickCommandInput = document.getElementById('quick-command-input');
@@ -456,11 +457,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     downloadScreenLogBtn.addEventListener('click', async () => {
         try {
-            const res = await fetch(`/api/get-vps-log?connectionId=${state.connectionId}`);
-            const data = await res.json();
-            downloadFile('screen.log', data.logContent || '');
+            const res = await fetch(`/api/download-screen-log?connectionId=${state.connectionId}`);
+            if (!res.ok) throw new Error('No se pudo descargar el log de screen.');
+            const blob = await res.blob();
+            downloadFile('screen.log', blob);
         } catch (error) {
-            showModal('Error', `${error.message}`);
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
+        }
+    });
+
+    downloadVpsLogBtn.addEventListener('click', async () => {
+        try {
+            const res = await fetch(`/api/download-vps-log?connectionId=${state.connectionId}`);
+            if (!res.ok) throw new Error('No se pudo descargar el log del VPS.');
+            const blob = await res.blob();
+            downloadFile('vps.log', blob);
+        } catch (error) {
+            showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
