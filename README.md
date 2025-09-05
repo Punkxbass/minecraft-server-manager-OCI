@@ -9,6 +9,7 @@
  * Gestión de Firewall: Automatiza la configuración de reglas de firewall tanto en la VPS (UFW) como en las Listas de Seguridad de OCI.
  * Copias de Seguridad: Crea y gestiona copias de seguridad del mundo del servidor.
  * Gestión de Jugadores: Administra la lista blanca (whitelist) y baneos de jugadores.
+ * Explorador de Archivos: Navega, descarga y gestiona archivos del VPS directamente desde la interfaz.
 * Interfaz Web Intuitiva: Controla todos los aspectos de tu servidor desde una interfaz web moderna y fácil de usar.
 ## 🗂️ Estructura del Proyecto
 ```

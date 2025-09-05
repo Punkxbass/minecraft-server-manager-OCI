@@ -31,13 +31,22 @@ const validateProperties = (props = {}) => {
   });
 };
 
+// Sanitize and resolve filesystem paths, ensuring access is limited to the
+// root of the VPS while preventing directory traversal sequences. This allows
+// the explorador de archivos to acceder a cualquier parte del sistema de
+// archivos respetando los permisos del usuario.
 function resolveSafePath(requestedPath = '') {
-  const safePath = path.posix.normalize('/' + requestedPath).replace(/^\/+/,'');
-  const fullPath = safePath ? path.join('/home/ubuntu', safePath) : '/home/ubuntu';
-  if (!fullPath.startsWith('/home/ubuntu')) {
+  const safePath = path.posix.normalize('/' + requestedPath).replace(/^\/+/, '');
+  const fullPath = path.join('/', safePath);
+  if (!fullPath.startsWith('/')) {
     throw new Error('Ruta no permitida.');
   }
   return fullPath;
+}
+
+// Escapa rutas para uso seguro en comandos de shell remotos
+function shellEscape(p = '') {
+  return `'${p.replace(/'/g, "'\\''")}'`;
 }
 
 // =============================
@@ -589,8 +598,7 @@ app.post('/api/list-files', async (req, res) => {
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   try {
     const targetDir = resolveSafePath(dir);
-    const escaped = targetDir.replace(/'/g, "'\\''");
-    const cmd = `find '${escaped}' -maxdepth 1 -mindepth 1 -printf '%f\t%y\n'`;
+    const cmd = `find ${shellEscape(targetDir)} -maxdepth 1 -mindepth 1 -printf '%f\t%y\n'`;
     const { output } = await execSshCommand(sshData.conn, cmd);
     const entries = output.trim() ? output.trim().split('\n').filter(Boolean).map(line => {
       const [name, type] = line.split('\t');
@@ -619,6 +627,45 @@ app.get('/api/download-file', (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=${path.basename(targetFile)}`);
     stream.pipe(res);
   });
+});
+
+// Gestión avanzada de archivos (eliminar, crear, mover, copiar, renombrar)
+app.post('/api/file-manager', async (req, res) => {
+  const { connectionId, action, src, dest } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  try {
+    if (!src) throw new Error('Ruta requerida.');
+    const srcPath = resolveSafePath(src);
+    let command;
+    switch (action) {
+      case 'delete':
+        command = `rm -rf ${shellEscape(srcPath)}`;
+        break;
+      case 'mkdir':
+        command = `mkdir -p ${shellEscape(srcPath)}`;
+        break;
+      case 'rename':
+      case 'move': {
+        if (!dest) throw new Error('Destino requerido.');
+        const destPath = resolveSafePath(dest);
+        command = `mv ${shellEscape(srcPath)} ${shellEscape(destPath)}`;
+        break;
+      }
+      case 'copy': {
+        if (!dest) throw new Error('Destino requerido.');
+        const destPath = resolveSafePath(dest);
+        command = `cp -r ${shellEscape(srcPath)} ${shellEscape(destPath)}`;
+        break;
+      }
+      default:
+        return res.status(400).json({ message: 'Acción no válida.' });
+    }
+    await execSshCommand(sshData.conn, command);
+    res.json({ success: true, message: 'Acción completada.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 app.get('/api/screen-logs', (req, res) => {

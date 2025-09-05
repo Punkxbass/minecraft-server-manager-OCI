@@ -108,6 +108,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const hideModal = () => modal.classList.add('hidden');
     modalCloseBtn.addEventListener('click', hideModal);
     modal.addEventListener('click', (e) => e.target === modal && hideModal());
+
+    // Modal de confirmación genérico que devuelve una promesa
+    function showConfirmationModal({ title, message, confirmText = 'Aceptar', cancelText = 'Cancelar' }) {
+        return new Promise((resolve) => {
+            showModal(title, `<p>${message}</p>`,
+                `<div class="flex gap-2">`+
+                `<button id="confirm-btn" class="px-3 py-1 bg-red-600 rounded">${confirmText}</button>`+
+                `<button id="cancel-btn" class="px-3 py-1 bg-gray-600 rounded">${cancelText}</button>`+
+                `</div>`);
+            document.getElementById('confirm-btn').addEventListener('click', () => { hideModal(); resolve(true); });
+            document.getElementById('cancel-btn').addEventListener('click', () => { hideModal(); resolve(false); });
+        });
+    }
     const showInstallerModal = () => installerModal.classList.remove('hidden');
     const hideInstallerModal = () => installerModal.classList.add('hidden');
     openInstallerBtn.addEventListener('click', () => { handleServerTypeChange(); showInstallerModal(); });
@@ -424,7 +437,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     rebootVpsBtn.addEventListener('click', async () => {
-        if (!confirm('¿Reiniciar la VPS?')) return;
+        const confirmation = await showConfirmationModal({
+            title: 'Confirmar Reinicio VPS',
+            message: '¿Está seguro de que desea reiniciar el VPS? Esta acción interrumpirá el servidor.',
+            confirmText: 'Reiniciar',
+            cancelText: 'Cancelar'
+        });
+        if (!confirmation) return;
         try {
             await apiCall('/api/reboot-vps', { connectionId: state.connectionId });
             showModal('Reinicio en proceso', '<p>La VPS se está reiniciando.</p>');
@@ -752,6 +771,22 @@ document.addEventListener('DOMContentLoaded', () => {
         pathLabel.className = 'mb-2 text-sm text-gray-400';
         pathLabel.textContent = '/' + dir;
         fileExplorerBody.appendChild(pathLabel);
+        const controls = document.createElement('div');
+        controls.className = 'mb-2 flex gap-2';
+        const newFolderBtn = document.createElement('button');
+        newFolderBtn.textContent = 'Nueva carpeta';
+        newFolderBtn.className = 'px-2 py-1 bg-blue-700 rounded';
+        newFolderBtn.addEventListener('click', async () => {
+            const name = prompt('Nombre de la carpeta:');
+            if (!name) return;
+            const newPath = dir ? `${dir}/${name}` : name;
+            try {
+                await fileAction('mkdir', newPath);
+                loadDirectory(dir);
+            } catch (err) { alert(err.message); }
+        });
+        controls.appendChild(newFolderBtn);
+        fileExplorerBody.appendChild(controls);
         const list = document.createElement('ul');
         list.className = 'space-y-1';
         if (dir) {
@@ -764,16 +799,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             if (e.type === 'dir') {
                 const newPath = dir ? dir + '/' + e.name : e.name;
-                li.innerHTML = `<button class="text-blue-400 fe-nav" data-path="${newPath}">${e.name}/</button>`;
+                li.innerHTML = `<span class="text-blue-400 fe-nav cursor-pointer" data-path="${newPath}">${e.name}/</span> <button class="fe-rename text-yellow-400 ml-2" data-path="${newPath}">Ren</button> <button class="fe-delete text-red-400 ml-1" data-path="${newPath}">Del</button> <button class="fe-move text-purple-400 ml-1" data-path="${newPath}">Mov</button> <button class="fe-copy text-green-400 ml-1" data-path="${newPath}">Copy</button>`;
             } else {
                 const filePath = dir ? dir + '/' + e.name : e.name;
-                li.innerHTML = `<button class="text-green-400 fe-download" data-path="${filePath}">${e.name}</button>`;
+                li.innerHTML = `<span class="text-green-400 fe-download cursor-pointer" data-path="${filePath}">${e.name}</span> <button class="fe-rename text-yellow-400 ml-2" data-path="${filePath}">Ren</button> <button class="fe-delete text-red-400 ml-1" data-path="${filePath}">Del</button> <button class="fe-move text-purple-400 ml-1" data-path="${filePath}">Mov</button> <button class="fe-copy text-green-400 ml-1" data-path="${filePath}">Copy</button>`;
             }
             list.appendChild(li);
         });
         fileExplorerBody.appendChild(list);
         fileExplorerBody.querySelectorAll('.fe-nav').forEach(btn => btn.addEventListener('click', () => loadDirectory(btn.dataset.path)));
         fileExplorerBody.querySelectorAll('.fe-download').forEach(btn => btn.addEventListener('click', () => downloadRemoteFile(btn.dataset.path)));
+        fileExplorerBody.querySelectorAll('.fe-delete').forEach(btn => btn.addEventListener('click', async () => {
+            if (!confirm('¿Eliminar?')) return;
+            try { await fileAction('delete', btn.dataset.path); loadDirectory(dir); } catch (err) { alert(err.message); }
+        }));
+        fileExplorerBody.querySelectorAll('.fe-rename').forEach(btn => btn.addEventListener('click', async () => {
+            const newName = prompt('Nuevo nombre:');
+            if (!newName) return;
+            const parent = btn.dataset.path.split('/').slice(0, -1).join('/');
+            const dest = parent ? parent + '/' + newName : newName;
+            try { await fileAction('rename', btn.dataset.path, dest); loadDirectory(dir); } catch (err) { alert(err.message); }
+        }));
+        fileExplorerBody.querySelectorAll('.fe-move').forEach(btn => btn.addEventListener('click', async () => {
+            const dest = prompt('Mover a (ruta completa):', btn.dataset.path);
+            if (!dest) return;
+            try { await fileAction('move', btn.dataset.path, dest); loadDirectory(dir); } catch (err) { alert(err.message); }
+        }));
+        fileExplorerBody.querySelectorAll('.fe-copy').forEach(btn => btn.addEventListener('click', async () => {
+            const dest = prompt('Copiar a (ruta completa):', btn.dataset.path);
+            if (!dest) return;
+            try { await fileAction('copy', btn.dataset.path, dest); loadDirectory(dir); } catch (err) { alert(err.message); }
+        }));
+    }
+
+    async function fileAction(action, src, dest) {
+        const body = { connectionId: state.connectionId, action, src };
+        if (dest) body.dest = dest;
+        await apiCall('/api/file-manager', body);
     }
     async function downloadRemoteFile(file) {
         try {
