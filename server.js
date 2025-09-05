@@ -8,10 +8,13 @@ const os = require('os');
 const { Client } = require('ssh2');
 const fetch = (...args) => globalThis.fetch(...args);
 const allowedCommands = require('./secureCommands');
+const http = require('http');
+const WebSocket = require('ws');
 
 const app = express();
 const port = 3000;
 const execAsync = promisify(exec);
+const server = http.createServer(app);
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -36,6 +39,42 @@ function resolveSafePath(requestedPath = '') {
 const sshConnections = new Map();
 const SERVER_PATH_BASE = (user) => `/home/${user}/minecraft-server`;
 const escapeForScreen = (cmd) => cmd.replace(/["\$]/g, '\\$&');
+
+const wss = new WebSocket.Server({ noServer: true });
+
+server.on('upgrade', (request, socket, head) => {
+  const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`);
+  if (pathname === '/ws/console') {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      ws.connectionId = searchParams.get('connectionId');
+      wss.emit('connection', ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+wss.on('connection', (ws) => {
+  const sshData = sshConnections.get(ws.connectionId);
+  if (!sshData) {
+    ws.close();
+    return;
+  }
+  sshData.conn.exec('screen -r minecraft-console', { pty: true }, (err, stream) => {
+    if (err) {
+      ws.close();
+      return;
+    }
+    stream.on('data', (data) => ws.send(data.toString()));
+    stream.stderr.on('data', (data) => ws.send(data.toString()));
+    ws.on('message', (msg) => stream.write(msg));
+    ws.on('close', () => {
+      stream.write('\u0001d');
+      stream.end();
+    });
+    stream.on('close', () => ws.close());
+  });
+});
 
 function execSshCommand(conn, command, streamRes = null) {
   return new Promise((resolve, reject) => {
@@ -314,7 +353,7 @@ app.post('/api/send-command', async (req, res) => {
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   if (!command) return res.status(400).json({ message: 'El comando no puede estar vacío.' });
 
-  const screenCommand = `/usr/bin/screen -S minecraft -p 0 -X stuff "${escapeForScreen(command)}\r"`;
+  const screenCommand = `/usr/bin/screen -S minecraft-console -p 0 -X stuff "${escapeForScreen(command)}\r"`;
 
   try {
     await execSshCommand(sshData.conn, screenCommand);
@@ -340,22 +379,19 @@ app.get('/api/get-latest-log', async (req, res) => {
   }
 });
 
-app.get('/api/get-screen-log', async (req, res) => {
+app.get('/api/download-console-log', (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const basePath = SERVER_PATH_BASE(sshData.sshUser);
-  const command = `if [ -f ${basePath}/screen.log ]; then cat ${basePath}/screen.log; elif [ -f ${basePath}/screenlog.0 ]; then cat ${basePath}/screenlog.0; else echo '__NO_LOG_FILE__'; fi`;
-  try {
-    const { output } = await execSshCommand(sshData.conn, command);
-    if (output.includes('__NO_LOG_FILE__')) {
-      res.status(404).json({ message: 'No se encontró el archivo de log de la consola.' });
-    } else {
-      res.json({ success: true, logContent: output });
-    }
-  } catch (error) {
-    res.status(500).json({ message: `No se pudo leer el log de screen: ${error.message}` });
-  }
+  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/logs/latest.log`;
+  sshData.conn.sftp((err, sftp) => {
+    if (err) return res.status(500).json({ message: 'Error SFTP.' });
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename=latest.log');
+    const stream = sftp.createReadStream(logPath);
+    stream.on('error', e => res.status(500).end(`Error al leer log: ${e.message}`));
+    stream.pipe(res);
+  });
 });
 
 app.get('/api/get-vps-log', async (req, res) => {
@@ -414,7 +450,7 @@ app.post('/api/list-files', async (req, res) => {
   const { connectionId, dir = '' } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const baseDir = SERVER_PATH_BASE(sshData.sshUser);
+  const baseDir = `/home/${sshData.sshUser}`;
   const safeRel = path.posix.normalize('/' + dir).replace(/^\/+/, '');
   const targetDir = path.posix.join(baseDir, safeRel);
   if (!targetDir.startsWith(baseDir)) return res.status(400).json({ message: 'Ruta no permitida.' });
@@ -436,7 +472,7 @@ app.get('/api/download-file', (req, res) => {
   const { connectionId, file } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const baseDir = SERVER_PATH_BASE(sshData.sshUser);
+  const baseDir = `/home/${sshData.sshUser}`;
   const safeRel = path.posix.normalize('/' + (file || '')).replace(/^\/+/, '');
   const targetFile = path.posix.join(baseDir, safeRel);
   if (!targetFile.startsWith(baseDir)) return res.status(400).json({ message: 'Ruta no permitida.' });
@@ -625,8 +661,8 @@ app.post('/api/manage-player', async (req, res) => {
   const serverCommand = commandMap[`${list}-${action}`];
   if (!serverCommand) return res.status(400).json({ message: 'Acción no válida.' });
 
-  const screenCmd = `/usr/bin/screen -p 0 -S minecraft -X eval "stuff \\\"${escapeForScreen(serverCommand)}\\\\015\\""`;
-  const reloadWhitelist = `/usr/bin/screen -p 0 -S minecraft -X eval "stuff \\\"whitelist reload\\\\015\\""`;
+  const screenCmd = `/usr/bin/screen -p 0 -S minecraft-console -X eval "stuff \\\"${escapeForScreen(serverCommand)}\\\\015\\""`;
+  const reloadWhitelist = `/usr/bin/screen -p 0 -S minecraft-console -X eval "stuff \\\"whitelist reload\\\\015\\""`;
 
   try {
     await execSshCommand(sshData.conn, screenCmd);
@@ -634,6 +670,22 @@ app.post('/api/manage-player', async (req, res) => {
     res.json({ success: true, message: 'OK' });
   } catch (error) {
     res.status(500).json({ message: `Error al gestionar jugador: ${error.message}` });
+  }
+});
+
+app.get('/api/players/online', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/logs/latest.log`;
+  const command = `/usr/bin/screen -S minecraft-console -p 0 -X stuff \"list\\r\" && sleep 1 && tail -n 1 ${logPath}`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, command);
+    const match = output.match(/players? online: (.*)/);
+    const players = match && match[1].trim() ? match[1].split(/,\s*/).filter(Boolean) : [];
+    res.json({ success: true, players });
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo obtener jugadores: ${error.message}` });
   }
 });
 
@@ -929,4 +981,4 @@ process.on('SIGINT', () => {
   process.exit();
 });
 
-app.listen(port, () => console.log(`Servidor escuchando en http://localhost:${port}`));
+server.listen(port, () => console.log(`Servidor escuchando en http://localhost:${port}`));

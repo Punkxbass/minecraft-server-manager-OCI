@@ -6,6 +6,10 @@
     <title>Minecraft Server Manager OCI</title>
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-attach@0.8.0/lib/xterm-addon-attach.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .log-console { height: 400px; }
@@ -28,8 +32,8 @@
                 <h1 class="text-3xl font-bold text-center mb-2 text-white">Minecraft Server Manager</h1>
                 <p class="text-gray-400 text-center mb-6">Gestiona tu servidor en Oracle Cloud</p>
                 <div class="space-y-4">
-                    <input type="text" id="vps-ip" placeholder="IP Pública del VPS" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                    <input type="text" id="ssh-user" placeholder="Usuario SSH (ej: ubuntu)" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <input type="text" id="vps-ip" placeholder="IP Pública del VPS" autocomplete="off" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <input type="text" id="ssh-user" placeholder="Usuario SSH (ej: ubuntu)" autocomplete="off" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
                     <div class="flex items-center gap-3">
                         <button id="ssh-key-upload-btn" class="w-full text-center bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 hover:bg-gray-600 transition">Cargar Llave SSH (.pem / .ppk)</button>
                         <input type="file" id="ssh-key-input" class="hidden" accept=".pem,.ppk,.key">
@@ -97,24 +101,17 @@
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xl font-bold text-white">Consola de Logs en Vivo</h3>
                         <div class="flex gap-2">
-                            <button id="open-screen-console-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Abrir consola</button>
-                            <button id="export-screen-log-btn-main" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar screen.log (Consola de Minecraft)</button>
+                            <button id="download-console-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar log - Consola de Minecraft</button>
                             <button id="export-vps-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar log de VPS</button>
                             <button id="clear-console-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Limpiar consola</button>
                             <button id="reboot-vps-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg text-sm">Reiniciar VPS</button>
                         </div>
                     </div>
                     <div id="log-console" class="log-console bg-black rounded-lg p-4 font-mono text-sm text-green-400 overflow-y-auto whitespace-pre-wrap flex-grow"></div>
-                    <div class="mt-4 flex gap-2">
-                        <input type="text" id="command-input" placeholder="Escribe un comando para el servidor..." class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                        <button id="send-command-btn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Enviar</button>
-                    </div>
-                    <div class="mt-3 flex gap-2 flex-wrap">
-                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="list" title="Lista los jugadores conectados">list</button>
-                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="stop" title="Detiene el servidor">stop</button>
-                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="save-all" title="Guarda el mundo">save-all</button>
-                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="restart" title="Reinicia el servidor">restart</button>
-                        <button class="command-preset-btn bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-3 rounded-full" data-command="say El servidor se reiniciará en 1 minuto." title="Envía un mensaje global">say</button>
+                    <div class="mt-4">
+                        <select id="command-dropdown" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white">
+                            <option value="">Comandos comunes</option>
+                        </select>
                     </div>
                     <div class="mt-6 flex items-center justify-between">
                         <button id="disconnect-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg">Desconectar</button>
@@ -271,7 +268,7 @@
                 <h3 class="text-2xl font-bold text-white">Gestión de Jugadores</h3>
                 <button id="players-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
             </div>
-            <div class="flex-grow p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="flex-grow p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <h4 class="text-lg font-bold mb-3">Operadores (OPs)</h4>
                     <ul id="ops-list" class="space-y-2 mb-4"></ul>
@@ -287,6 +284,13 @@
                         <input type="text" id="whitelist-player-name" placeholder="Nombre del jugador" class="w-full bg-gray-700 p-2 rounded">
                         <button id="add-whitelist-btn" class="bg-blue-500 px-4 rounded text-white">Añadir</button>
                     </div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="text-lg font-bold">Jugadores Conectados</h4>
+                        <button id="refresh-online-btn" class="bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded">Refrescar</button>
+                    </div>
+                    <ul id="online-players-list" class="space-y-2 mb-4"></ul>
                 </div>
             </div>
             <div id="players-modal-footer" class="p-4 border-t border-gray-700 text-sm text-gray-400">Los cambios se aplican en tiempo real si el servidor está activo.</div>
@@ -320,29 +324,6 @@
         </div>
     </div>
 
-    <div id="screen-console-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
-        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] flex">
-            <div class="w-48 bg-gray-900 p-4 border-r border-gray-700 space-y-2">
-                <h4 class="text-sm font-bold mb-2 text-white">Comandos comunes</h4>
-                <button class="screen-cmd-btn bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 px-2 rounded w-full text-left" data-command="list" title="Lista los jugadores conectados">list</button>
-                <button class="screen-cmd-btn bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 px-2 rounded w-full text-left" data-command="stop" title="Detiene el servidor">stop</button>
-                <button class="screen-cmd-btn bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 px-2 rounded w-full text-left" data-command="save-all" title="Guarda el mundo">save-all</button>
-                <button class="screen-cmd-btn bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 px-2 rounded w-full text-left" data-command="reset" title="Reinicia la consola">reset</button>
-                <button id="screen-export-log-btn" class="mt-4 bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded w-full text-left" title="Descarga el log actual">Exportar log</button>
-            </div>
-            <div class="flex-1 flex flex-col">
-                <div class="flex justify-between items-center p-4 border-b border-gray-700">
-                    <h3 class="text-xl font-bold text-white">Consola de Minecraft</h3>
-                    <button id="screen-console-close-btn" class="text-gray-400 hover:text-white text-2xl">&times;</button>
-                </div>
-                <div id="screen-console-log" class="flex-grow bg-black p-4 font-mono text-sm text-green-400 overflow-y-auto"></div>
-                <div class="p-4 border-t border-gray-700 flex gap-2">
-                    <input type="text" id="screen-console-input" placeholder="Escribe un comando..." class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white">
-                    <button id="screen-console-send" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Enviar</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <script src="script.js"></script>
 </body>
