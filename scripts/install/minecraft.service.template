@@ -1,0 +1,27 @@
+[Unit]
+Description=Minecraft Server
+Wants=network-online.target
+After=network-online.target
+
+
+# Run as a dedicated, non-privileged user for security
+User={{USER}}
+Group={{USER}}
+
+# Set the working directory to where the server files are located
+WorkingDirectory={{WORKING_DIR}}
+
+# Command to start the server inside a named screen session.
+# Memory values are replaced during installation.
+ExecStart=/usr/bin/screen -S minecraft-console -d -m /usr/bin/java -Xmx{{MAX_RAM}} -Xms{{MIN_RAM}} -jar server.jar nogui
+
+# Restart policy for resilience
+Restart=on-failure
+RestartSec=30s
+
+# The service does not need standard input
+StandardInput=null
+
+[Install]
+# Enable the service to start on boot
+WantedBy=multi-user.target
