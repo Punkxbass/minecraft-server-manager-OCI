@@ -285,8 +285,22 @@ document.addEventListener('DOMContentLoaded', () => {
         notificationArea.className = 'mb-6 p-4 rounded-lg bg-gray-700';
         try {
             const data = await apiCall('/api/server-status', { connectionId: state.connectionId });
-            notificationArea.innerHTML = data.isActive ? `✅ <span class="font-bold">¡Servidor activo!</span> IP: <code class="bg-gray-900 px-2 py-1 rounded">${vpsIpInput.value}:25565</code>` : 'ℹ️ Servidor detenido o no instalado.';
+            const statusText = data.isActive ?
+                `✅ ¡Servidor activo! IP: \`${vpsIpInput.value}:25565\`` :
+                'ℹ️ Servidor detenido o no instalado.';
+
+            notificationArea.innerHTML = statusText;
             notificationArea.className = `mb-6 p-4 rounded-lg ${data.isActive ? 'bg-green-600' : 'bg-blue-600'}`;
+
+            // Actualizar botones según el estado
+            document.querySelectorAll('.server-control-btn').forEach(btn => {
+                if (btn.dataset.action === 'start') {
+                    btn.disabled = data.isActive;
+                } else if (btn.dataset.action === 'stop') {
+                    btn.disabled = !data.isActive;
+                }
+            });
+
         } catch(error) {
             notificationArea.textContent = `❌ Error al comprobar estado: ${error.message}`;
             notificationArea.className = 'mb-6 p-4 rounded-lg bg-red-600';
