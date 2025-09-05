@@ -6,8 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resourceMonitorInterval: null,
         vpsTerm: null,
         vpsSocket: null,
-        mcTerm: null,
-        mcSocket: null,
     };
 
     // --- Selectores de Elementos ---
@@ -73,16 +71,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileExplorerModal = document.getElementById('file-explorer-modal');
     const fileExplorerCloseBtn = document.getElementById('file-explorer-close-btn');
     const fileExplorerBody = document.getElementById('file-explorer-body');
-    const exportVpsLogBtn = document.getElementById('export-vps-log-btn');
     const clearConsoleBtn = document.getElementById('clear-console-btn');
     const rebootVpsBtn = document.getElementById('reboot-vps-btn');
     const downloadConsoleLogBtn = document.getElementById('download-console-log-btn');
+    const downloadScreenLogBtn = document.getElementById('download-screen-log-btn');
+    const attachMinecraftScreenBtn = document.getElementById('attach-minecraft-screen');
+    const detachMinecraftScreenBtn = document.getElementById('detach-minecraft-screen');
+    const quickCommandInput = document.getElementById('quick-command-input');
+    const sendQuickCommandBtn = document.getElementById('send-quick-command');
     const modsGuideBtn = document.getElementById('mods-guide-btn');
-    const openMcConsoleBtn = document.getElementById('open-mc-console-btn');
-    const mcConsoleModal = document.getElementById('mc-console-modal');
-    const mcConsoleCloseBtn = document.getElementById('mc-console-close-btn');
-    const mcConsole = document.getElementById('mc-console');
-    const mcCommandList = document.getElementById('mc-command-list');
     const onlinePlayersList = document.getElementById('online-players-list');
     const refreshOnlineBtn = document.getElementById('refresh-online-btn');
     const adminPlayerName = document.getElementById('admin-player-name');
@@ -207,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
     connectBtn.addEventListener('click', connectToServer);
     disconnectBtn.addEventListener('click', () => {
         if (state.connectionId) apiCall('/api/logout', { connectionId: state.connectionId });
-        stopVpsTerminal(); stopMcTerminal(); stopResourceMonitor();
+        stopVpsTerminal(); stopResourceMonitor();
         state.connectionId = null; state.sshKeyContent = null;
         vpsIpInput.value = ''; sshUserInput.value = ''; sshKeyInput.value = ''; sshKeyFileName.textContent = '';
         loginError.textContent = '';
@@ -359,9 +356,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Actualizar la notificación principal
             checkServerStatus();
-            if (['start', 'restart'].includes(action) && !mcConsoleModal.classList.contains('hidden')) {
-                startMcTerminal();
-            }
 
         } catch (error) { 
             showModal(`Error al ejecutar '${action}'`, `<p class="text-red-400">${error.message}</p>`);
@@ -412,14 +406,6 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url); a.remove();
     }
     function exportSessionLog() { downloadFile(`status-log-${new Date().toISOString()}.txt`, state.lastStatusOutput); }
-    async function exportVpsLog() {
-        if (!state.connectionId) return;
-        try {
-            const res = await fetch(`/api/get-vps-log?connectionId=${state.connectionId}`);
-            const data = await res.json();
-            downloadFile('vps.log', data.logContent || '');
-        } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
-    }
     async function downloadConsoleLog() {
         if (!state.connectionId) return;
         try {
@@ -429,8 +415,6 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadFile('latest.log', blob);
         } catch (error) { showModal('Error', `<p class="text-red-400">${error.message}</p>`); }
     }
-
-    exportVpsLogBtn.addEventListener('click', exportVpsLog);
     clearConsoleBtn.addEventListener('click', async () => {
         state.vpsTerm?.clear();
         try {
@@ -449,13 +433,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     downloadConsoleLogBtn.addEventListener('click', downloadConsoleLog);
-    openMcConsoleBtn.addEventListener('click', () => {
-        mcConsoleModal.classList.remove('hidden');
-        startMcTerminal();
+
+    attachMinecraftScreenBtn.addEventListener('click', () => {
+        if (state.vpsTerm && state.vpsSocket) {
+            state.vpsSocket.send('screen -r minecraft-console\r');
+        }
     });
-    mcConsoleCloseBtn.addEventListener('click', () => {
-        mcConsoleModal.classList.add('hidden');
-        stopMcTerminal();
+
+    detachMinecraftScreenBtn.addEventListener('click', () => {
+        if (state.vpsTerm && state.vpsSocket) {
+            state.vpsSocket.send('\u0001d');
+        }
+    });
+
+    sendQuickCommandBtn.addEventListener('click', () => {
+        const command = quickCommandInput.value.trim();
+        if (command && state.vpsSocket) {
+            state.vpsSocket.send(command + '\r');
+            quickCommandInput.value = '';
+        }
+    });
+
+    downloadScreenLogBtn.addEventListener('click', async () => {
+        try {
+            const res = await fetch(`/api/get-vps-log?connectionId=${state.connectionId}`);
+            const data = await res.json();
+            downloadFile('screen.log', data.logContent || '');
+        } catch (error) {
+            showModal('Error', `${error.message}`);
+        }
     });
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
     modsGuideBtn.addEventListener('click', async () => {
@@ -466,35 +472,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal('Error', `<p class="text-red-400">${error.message}</p>`);
         }
     });
-    const commonCommands = [
-        { cmd: '/kick <jugador>', desc: 'Expulsa a un jugador' },
-        { cmd: '/ban <jugador>', desc: 'Banea a un jugador' },
-        { cmd: '/pardon <jugador>', desc: 'Desbanea a un jugador' },
-        { cmd: '/gamemode survival <jugador>', desc: 'Modo supervivencia' },
-        { cmd: '/gamemode creative <jugador>', desc: 'Modo creativo' }
-    ];
-
-    const showToast = (message) => {
-        const toast = document.createElement('div');
-        toast.textContent = message;
-        toast.className = 'fixed bottom-4 right-4 bg-gray-700 text-white px-4 py-2 rounded shadow-lg';
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 2000);
-    };
-
-    function renderCommandList() {
-        mcCommandList.innerHTML = '';
-        commonCommands.forEach(c => {
-            const li = document.createElement('li');
-            li.className = 'cursor-pointer hover:bg-gray-700 p-2 rounded';
-            li.innerHTML = `<span class="font-mono text-green-400">${c.cmd}</span> - <span class="text-gray-300">${c.desc}</span>`;
-            li.addEventListener('click', () => {
-                navigator.clipboard.writeText(c.cmd + ' ').then(() => showToast('¡Comando copiado!'));
-            });
-            mcCommandList.appendChild(li);
-        });
-    }
-    renderCommandList();
 
     function sendCommandDirect(command) {
         if (!command) return;
@@ -532,34 +509,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function startMcTerminal() {
-        stopMcTerminal();
-        const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-        const socket = new WebSocket(`${protocol}://${location.host}/ws/minecraft?connectionId=${state.connectionId}`);
-        state.mcSocket = socket;
-        const term = new Terminal({ cursorBlink: true });
-        const fitAddon = new FitAddon.FitAddon();
-        const attachAddon = new AttachAddon.AttachAddon(socket, { bidirectional: true });
-        term.loadAddon(fitAddon);
-        term.loadAddon(attachAddon);
-        term.open(mcConsole);
-        fitAddon.fit();
-        term.focus();
-        mcConsole.addEventListener('click', () => term.focus());
-        socket.addEventListener('open', () => term.focus());
-        window.addEventListener('resize', () => fitAddon.fit());
-        state.mcTerm = term;
-    }
-    function stopMcTerminal() {
-        if (state.mcSocket) {
-            state.mcSocket.close();
-            state.mcSocket = null;
-        }
-        if (state.mcTerm) {
-            state.mcTerm.dispose();
-            state.mcTerm = null;
-        }
-    }
     async function populateVersionDropdowns() {
         const type = serverTypeSelect.value;
         minecraftVersionSelect.innerHTML = '<option value="">Cargando...</option>';

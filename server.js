@@ -21,16 +21,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
 function resolveSafePath(requestedPath = '') {
-  const safePath = path.posix
-    .normalize('/' + requestedPath)
-    .replace(/^\/+/, '');
-
-  // Permitir acceso a /home/ubuntu y subdirectorios
-  const allowedPaths = ['/home/ubuntu', '/home/minecraft'];
+  const safePath = path.posix.normalize('/' + requestedPath).replace(/^\/+/,'');
   const fullPath = safePath ? path.join('/home/ubuntu', safePath) : '/home/ubuntu';
-
-  const isAllowed = allowedPaths.some(allowed => fullPath.startsWith(allowed));
-  if (!isAllowed) {
+  if (!fullPath.startsWith('/home/ubuntu')) {
     throw new Error('Ruta no permitida.');
   }
   return fullPath;
@@ -43,9 +36,8 @@ const sshConnections = new Map();
 const SERVER_PATH_BASE = (user) => `/home/${user}/minecraft-server`;
 const escapeForScreen = (cmd) => cmd.replace(/["\$]/g, '\\$&');
 
-// WebSocket servers for VPS shell and Minecraft console
+// WebSocket server for VPS shell
 const wssVps = new WebSocket.Server({ noServer: true });
-const wssMinecraft = new WebSocket.Server({ noServer: true });
 
 server.on('upgrade', (request, socket, head) => {
   const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`);
@@ -53,11 +45,6 @@ server.on('upgrade', (request, socket, head) => {
     wssVps.handleUpgrade(request, socket, head, (ws) => {
       ws.connectionId = searchParams.get('connectionId');
       wssVps.emit('connection', ws, request);
-    });
-  } else if (pathname === '/ws/minecraft') {
-    wssMinecraft.handleUpgrade(request, socket, head, (ws) => {
-      ws.connectionId = searchParams.get('connectionId');
-      wssMinecraft.emit('connection', ws, request);
     });
   } else {
     socket.destroy();
@@ -73,6 +60,7 @@ wssVps.on('connection', (ws) => {
   }
   sshData.conn.shell({ term: 'xterm-color' }, (err, stream) => {
     if (err) {
+      ws.send(`Error: ${err.message}`);
       ws.close();
       return;
     }
@@ -81,49 +69,9 @@ wssVps.on('connection', (ws) => {
     ws.on('message', (msg) => stream.write(msg));
     ws.on('close', () => stream.end());
     stream.on('close', () => ws.close());
-  });
-});
-
-// Minecraft console WebSocket
-wssMinecraft.on('connection', (ws) => {
-  const sshData = sshConnections.get(ws.connectionId);
-  if (!sshData) {
-    ws.close();
-    return;
-  }
-
-  // Verificar que la sesión de screen existe antes de conectar
-  sshData.conn.exec('screen -list | grep -q minecraft-console', (err, checkStream) => {
-    if (err) {
-      ws.send('Error: No hay sesión de Minecraft activa\r\n');
+    stream.on('error', (e) => {
+      ws.send(`Error: ${e.message}`);
       ws.close();
-      return;
-    }
-
-    checkStream.on('close', (code) => {
-      if (code !== 0) {
-        ws.send('Error: Servidor de Minecraft no está ejecutándose\r\n');
-        ws.close();
-        return;
-      }
-
-      // Conectar a la sesión de screen existente
-      sshData.conn.exec('screen -r minecraft-console', { pty: true }, (err, stream) => {
-        if (err) {
-          ws.send('Error: No se puede conectar a la consola\r\n');
-          ws.close();
-          return;
-        }
-
-        stream.on('data', (data) => ws.send(data.toString()));
-        stream.stderr.on('data', (data) => ws.send(data.toString()));
-        ws.on('message', (msg) => stream.write(msg));
-        ws.on('close', () => {
-          stream.write('\u0001d'); // Ctrl+A, D para dejar la sesión
-          stream.end();
-        });
-        stream.on('close', () => ws.close());
-      });
     });
   });
 });
@@ -469,6 +417,27 @@ app.post('/api/send-command', async (req, res) => {
     res.json({ success: true, message: `Comando '${command}' enviado.` });
   } catch (err) {
     res.status(500).json({ message: `Error al enviar comando. ¿Está el servidor activo? Detalles: ${err.message}` });
+  }
+});
+
+app.post('/api/screen-command', async (req, res) => {
+  const { connectionId, action } = req.body;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+
+  const commands = {
+    attach: 'screen -r minecraft-console',
+    detach: 'screen -d minecraft-console'
+  };
+
+  const command = commands[action];
+  if (!command) return res.status(400).json({ message: 'Acción no válida.' });
+
+  try {
+    await execSshCommand(sshData.conn, command);
+    res.json({ success: true, message: `Screen ${action} ejecutado.` });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
