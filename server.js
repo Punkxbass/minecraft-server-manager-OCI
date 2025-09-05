@@ -228,7 +228,7 @@ Type=forking
 User=\${MC_USER}
 Group=\${MC_USER}
 WorkingDirectory=\${MC_DIR}
-ExecStart=/usr/bin/screen -dmS minecraft-console bash -c 'exec \${MC_DIR}/start.sh'
+ExecStart=/usr/bin/screen -L -Logfile \${MC_DIR}/screen.log -dmS minecraft-console bash -c 'exec \${MC_DIR}/start.sh'
 ExecStop=/usr/bin/screen -S minecraft-console -X quit
 Restart=on-failure
 RestartSec=10
@@ -239,8 +239,9 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable minecraft.service
+sudo systemctl start minecraft.service
 
-echo "Servicio systemd configurado correctamente"
+echo "Servicio systemd configurado y servidor iniciado correctamente"
 `;
 
   const installScript = `
@@ -472,6 +473,30 @@ app.get('/api/download-console-log', (req, res) => {
   });
 });
 
+app.get('/api/download-screen-log', (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const baseDir = SERVER_PATH_BASE(sshData.sshUser);
+  const candidates = [`${baseDir}/screen.log`, `${baseDir}/screenlog.0`];
+  sshData.conn.sftp((err, sftp) => {
+    if (err) return res.status(500).json({ message: 'Error SFTP.' });
+    const tryNext = (i) => {
+      if (i >= candidates.length) return res.status(404).json({ message: 'Archivo de log de screen no encontrado.' });
+      const target = candidates[i];
+      sftp.stat(target, (statErr) => {
+        if (statErr) return tryNext(i + 1);
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Content-Disposition', 'attachment; filename=screen.log');
+        const stream = sftp.createReadStream(target);
+        stream.on('error', e => res.status(500).end(`Error al leer log: ${e.message}`));
+        stream.pipe(res);
+      });
+    };
+    tryNext(0);
+  });
+});
+
 app.get('/api/get-vps-log', async (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
@@ -485,6 +510,24 @@ app.get('/api/get-vps-log', async (req, res) => {
     res.json({ success: true, logContent: output });
   } catch (error) {
     res.status(500).json({ message: `No se pudo leer los logs del VPS: ${error.message}` });
+  }
+});
+
+app.get('/api/download-vps-log', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const serverDir = SERVER_PATH_BASE(sshData.sshUser);
+  const installLog = `/home/${sshData.sshUser}/install.log`;
+  const screenLog = `${serverDir}/screen.log`;
+  const command = `if [ -f ${screenLog} ]; then cat ${installLog} ${screenLog}; else cat ${installLog}; fi`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, command);
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename=vps.log');
+    res.send(output);
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo generar el log del VPS: ${error.message}` });
   }
 });
 
