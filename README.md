@@ -9,9 +9,32 @@
  * Gestión de Firewall: Automatiza la configuración de reglas de firewall tanto en la VPS (UFW) como en las Listas de Seguridad de OCI.
  * Copias de Seguridad: Crea y gestiona copias de seguridad del mundo del servidor.
  * Gestión de Jugadores: Administra la lista blanca (whitelist) y baneos de jugadores.
- * Interfaz Web Intuitiva: Controla todos los aspectos de tu servidor desde una interfaz web moderna y fácil de usar.
+* Interfaz Web Intuitiva: Controla todos los aspectos de tu servidor desde una interfaz web moderna y fácil de usar.
+## 🗂️ Estructura del Proyecto
+```
+minecraft-server-manager-OCI/
+├── config/
+│   └── .env.example
+├── docs/
+│   ├── guides/
+│   └── api/
+├── scripts/
+│   ├── install/
+│   ├── maintenance/
+│   └── bash/
+├── src/
+│   ├── secureCommands.js
+│   ├── server.js
+│   └── public/
+│       ├── index.html
+│       ├── script.js
+│       └── styles/
+└── PENDIENTES.md
+```
 ## 📸 Capturas de Pantalla
 (Aquí se pueden añadir imágenes de la interfaz web)
+## 🗺️ Diagrama de Arquitectura
+(Agregar diagrama representando la comunicación entre frontend, backend y VPS)
 ## 🚀 Cómo Empezar
 Sigue estos pasos para poner en marcha el gestor en tu propia infraestructura de OCI.
 ### Requisitos Previos
@@ -47,6 +70,16 @@ Una vez que el backend esté en funcionamiento y la VPS preparada, accede a la i
  * Controlar el estado del servicio.
  * Ver los logs en tiempo real.
  * Gestionar otras funcionalidades a través de los menús correspondientes.
+## 🛠️ Troubleshooting
+* Verifica que las claves SSH tengan permisos correctos.
+* Revisa los logs descargables si el servidor no responde.
+* Asegúrate de que los puertos 22 y 25565 estén abiertos en OCI y en UFW.
+## ❓ FAQ
+**¿Puedo usar otro proveedor que no sea OCI?**
+Sí, siempre que tengas acceso SSH al servidor Linux.
+
+**¿Dónde se guardan los logs descargados?**
+En el directorio de descargas configurado en tu navegador.
 ## 🔒 Consideraciones de Seguridad
 ¡IMPORTANTE! Este proyecto proporciona un control administrativo completo sobre un servidor remoto. Exponer la interfaz web directamente a Internet sin las debidas precauciones es extremadamente arriesgado.
  * Acceso Restringido: Se recomienda encarecidamente NO exponer el puerto del backend a la Internet pública. Accede a la interfaz web a través de una VPN, un túnel SSH o, como mínimo, restringe el acceso a tu dirección IP estática en el firewall.

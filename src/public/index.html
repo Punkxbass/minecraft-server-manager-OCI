@@ -51,9 +51,9 @@
                 <div class="mt-8 pt-6 border-top border-gray-700">
                     <h3 class="text-lg font-bold mb-4 text-center text-gray-300">¿Necesitas ayuda?</h3>
                     <div class="space-y-3">
-                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="guia_vps_oci.md">1. Crear VPS en Oracle Cloud</button>
-                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="guia_oci_cli.md">2. Configurar OCI CLI</button>
-                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="guia_minecraft_manual.md">3. Instalar Minecraft Manualmente</button>
+                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="vps-setup.md">1. Crear VPS en Oracle Cloud</button>
+                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="oci-cli-setup.md">2. Configurar OCI CLI</button>
+                        <button class="guide-btn w-full bg-gray-600 hover:bg-gray-700 text-left p-3 rounded-lg transition" data-file="manual-install.md">3. Instalar Minecraft Manualmente</button>
                     </div>
                 </div>
             </div>
@@ -101,38 +101,36 @@
                     <div class="bg-gray-800 p-6 rounded-lg">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-xl font-bold text-blue-400">Consola VPS Unificada</h3>
-                            <div class="flex gap-2">
-                                <button id="attach-minecraft-screen" class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">
-                                    Abrir Screen Minecraft
-                                </button>
-                                <button id="detach-minecraft-screen" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-sm">
-                                    Cerrar Screen Minecraft
-                                </button>
-                                <button id="download-console-log-btn" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
-                                    Descargar Log Consola
-                                </button>
-                                <button id="download-screen-log-btn" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm">
-                                    Descargar Log Screen
-                                </button>
-                                <button id="download-vps-log-btn" class="bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded text-sm">
-                                    Descargar Log VPS
-                                </button>
-                                <button id="clear-console-btn" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm">
-                                    Limpiar Consola
-                                </button>
-                                <button id="reboot-vps-btn" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm">
-                                    Reiniciar VPS
-                                </button>
-                            </div>
-                        </div>
-                        <div id="vps-console" class="bg-black rounded border-2 border-gray-600" style="height: 400px;"></div>
-                        <div class="mt-4 flex gap-2">
-                            <input type="text" id="quick-command-input" placeholder="Escribir comando rápido..." class="flex-1 bg-gray-700 text-white px-3 py-2 rounded border border-gray-600">
-                            <button id="send-quick-command" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
-                                Enviar
-                            </button>
-                        </div>
-                    </div>
+                              <div class="flex gap-2">
+                                  <button id="attach-minecraft-screen" class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">
+                                      Abrir Screen Minecraft
+                                  </button>
+                                  <button id="detach-minecraft-screen" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-sm">
+                                      Cerrar Screen Minecraft
+                                  </button>
+                                  <button id="download-vps-log-btn" class="bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded text-sm">
+                                      Descargar logs VPS
+                                  </button>
+                                  <button id="download-screen-log-btn" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm">
+                                      Descargar log Screen
+                                  </button>
+                                  <button id="download-complete-log-btn" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+                                      Descargar log completo
+                                  </button>
+                              </div>
+                          </div>
+                          <div id="vps-console" class="bg-black rounded border-2 border-gray-600" style="height: 400px;"></div>
+                          <div class="mt-4 flex gap-2">
+                              <input type="text" id="quick-command-input" placeholder="Escribir comando rápido..." class="flex-1 bg-gray-700 text-white px-3 py-2 rounded border border-gray-600">
+                              <button id="send-quick-command" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
+                                  Enviar
+                              </button>
+                          </div>
+                          <div class="mt-2 flex gap-2">
+                              <button id="clear-console-btn" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm">Limpiar Consola</button>
+                              <button id="reboot-vps-btn" class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm">Reiniciar VPS</button>
+                          </div>
+                      </div>
                     <div class="mt-6 flex items-center justify-between">
                         <button id="disconnect-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg">Desconectar</button>
                         <button id="export-config-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 text-sm">Exportar Configuración Actual</button>

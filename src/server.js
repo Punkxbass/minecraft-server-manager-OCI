@@ -16,9 +16,20 @@ const port = 3000;
 const execAsync = promisify(exec);
 const server = http.createServer(app);
 
+const LOG_DOWNLOAD_LIMIT = 10000;
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const validateServerType = (type) => ['vanilla', 'paper', 'fabric'].includes(type);
+const sanitizeCommand = (cmd = '') => cmd.replace(/[;&|`$(){}\[\]\\]/g, '');
+const validateUsername = (name = '') => /^[a-zA-Z0-9_]{3,16}$/.test(name);
+const validateProperties = (props = {}) => {
+  return Object.entries(props).every(([k, v]) => {
+    return /^[a-zA-Z0-9_.-]+$/.test(k) && typeof v === 'string' && !/[\r\n]/.test(v);
+  });
+};
 
 function resolveSafePath(requestedPath = '') {
   const safePath = path.posix.normalize('/' + requestedPath).replace(/^\/+/,'');
@@ -123,11 +134,12 @@ async function executeSecureCommand(conn, commandKey, userArgs = []) {
 // =============================
 app.get('/api/get-guide', async (req, res) => {
   const { file } = req.query;
-  if (!file || !['guia_vps_oci.md', 'guia_oci_cli.md', 'guia_minecraft_manual.md', 'guia_mods.md'].includes(file)) {
+  const allowed = ['vps-setup.md', 'oci-cli-setup.md', 'manual-install.md', 'mods-guide.md'];
+  if (!file || !allowed.includes(file)) {
     return res.status(400).json({ message: 'Archivo de guía no válido.' });
   }
   try {
-    const filePath = path.join(__dirname, file);
+    const filePath = path.join(__dirname, '..', 'docs', 'guides', file);
     const content = await fs.readFile(filePath, 'utf-8');
     const { marked } = await import('marked');
     const htmlContent = marked.parse(content);
@@ -203,6 +215,12 @@ app.post('/api/install-server', async (req, res) => {
   const { connectionId, serverType, mcVersion, properties, minRam, maxRam } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  if (!validateServerType(serverType) || !/^[\w.-]+$/.test(mcVersion)) {
+    return res.status(400).json({ message: 'Parámetros de instalación inválidos.' });
+  }
+  if (properties && !validateProperties(properties)) {
+    return res.status(400).json({ message: 'Propiedades inválidas.' });
+  }
 
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' });
 
@@ -409,13 +427,14 @@ app.post('/api/send-command', async (req, res) => {
   const { connectionId, command } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  if (!command) return res.status(400).json({ message: 'El comando no puede estar vacío.' });
+  const sanitized = sanitizeCommand(command);
+  if (!sanitized) return res.status(400).json({ message: 'Comando inválido.' });
 
-  const screenCommand = `/usr/bin/screen -S minecraft-console -p 0 -X stuff "${escapeForScreen(command)}\r"`;
+  const screenCommand = `/usr/bin/screen -S minecraft-console -p 0 -X stuff "${escapeForScreen(sanitized)}\r"`;
 
   try {
     await execSshCommand(sshData.conn, screenCommand);
-    res.json({ success: true, message: `Comando '${command}' enviado.` });
+    res.json({ success: true, message: `Comando '${sanitized}' enviado.` });
   } catch (err) {
     res.status(500).json({ message: `Error al enviar comando. ¿Está el servidor activo? Detalles: ${err.message}` });
   }
@@ -458,43 +477,22 @@ app.get('/api/get-latest-log', async (req, res) => {
   }
 });
 
-app.get('/api/download-console-log', (req, res) => {
-  const { connectionId } = req.query;
-  const sshData = sshConnections.get(connectionId);
-  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const logPath = `${SERVER_PATH_BASE(sshData.sshUser)}/logs/latest.log`;
-  sshData.conn.sftp((err, sftp) => {
-    if (err) return res.status(500).json({ message: 'Error SFTP.' });
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', 'attachment; filename=latest.log');
-    const stream = sftp.createReadStream(logPath);
-    stream.on('error', e => res.status(500).end(`Error al leer log: ${e.message}`));
-    stream.pipe(res);
-  });
-});
-
-app.get('/api/download-screen-log', (req, res) => {
+app.get('/api/download-screen-log', async (req, res) => {
   const { connectionId } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   const baseDir = SERVER_PATH_BASE(sshData.sshUser);
   const candidates = [`${baseDir}/screen.log`, `${baseDir}/screenlog.0`];
-  sshData.conn.sftp((err, sftp) => {
-    if (err) return res.status(500).json({ message: 'Error SFTP.' });
-    const tryNext = (i) => {
-      if (i >= candidates.length) return res.status(404).json({ message: 'Archivo de log de screen no encontrado.' });
-      const target = candidates[i];
-      sftp.stat(target, (statErr) => {
-        if (statErr) return tryNext(i + 1);
-        res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('Content-Disposition', 'attachment; filename=screen.log');
-        const stream = sftp.createReadStream(target);
-        stream.on('error', e => res.status(500).end(`Error al leer log: ${e.message}`));
-        stream.pipe(res);
-      });
-    };
-    tryNext(0);
-  });
+  const command = `for f in ${candidates.join(' ')}; do [ -f "$f" ] && tail -n ${LOG_DOWNLOAD_LIMIT} "$f" && break; done`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, command);
+    if (!output) return res.status(404).json({ message: 'Archivo de log de screen no encontrado.' });
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename=screen.log');
+    res.send(output);
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo obtener el log de screen: ${error.message}` });
+  }
 });
 
 app.get('/api/get-vps-log', async (req, res) => {
@@ -504,7 +502,7 @@ app.get('/api/get-vps-log', async (req, res) => {
   const serverDir = SERVER_PATH_BASE(sshData.sshUser);
   const installLog = `/home/${sshData.sshUser}/install.log`;
   const screenLog = `${serverDir}/screen.log`;
-  const command = `if [ -f ${screenLog} ]; then cat ${installLog} ${screenLog}; else cat ${installLog}; fi`;
+  const command = `if [ -f ${screenLog} ]; then cat ${installLog} ${screenLog}; else cat ${installLog}; fi | tail -n ${LOG_DOWNLOAD_LIMIT}`;
   try {
     const { output } = await execSshCommand(sshData.conn, command);
     res.json({ success: true, logContent: output });
@@ -528,6 +526,24 @@ app.get('/api/download-vps-log', async (req, res) => {
     res.send(output);
   } catch (error) {
     res.status(500).json({ message: `No se pudo generar el log del VPS: ${error.message}` });
+  }
+});
+
+app.get('/api/download-complete-log', async (req, res) => {
+  const { connectionId } = req.query;
+  const sshData = sshConnections.get(connectionId);
+  if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
+  const serverDir = SERVER_PATH_BASE(sshData.sshUser);
+  const installLog = `/home/${sshData.sshUser}/install.log`;
+  const screenLog = `${serverDir}/screen.log`;
+  const command = `cat ${installLog} ${screenLog} 2>/dev/null; journalctl -n ${LOG_DOWNLOAD_LIMIT} --no-pager`;
+  try {
+    const { output } = await execSshCommand(sshData.conn, command);
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', 'attachment; filename=complete.log');
+    res.send(output);
+  } catch (error) {
+    res.status(500).json({ message: `No se pudo obtener el log completo: ${error.message}` });
   }
 });
 
@@ -724,6 +740,7 @@ app.post('/api/save-properties', async (req, res) => {
   const { connectionId, properties } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData || !properties) return res.status(400).json({ message: 'Faltan parámetros.' });
+  if (!validateProperties(properties)) return res.status(400).json({ message: 'Propiedades inválidas.' });
 
   const propsString = Object.entries(properties)
     .map(([k, v]) => `${k.replace(/-/g, '.')}=${v}`)
@@ -770,6 +787,9 @@ app.post('/api/manage-player', async (req, res) => {
   const sshData = sshConnections.get(connectionId);
   if (!sshData || !action || !list || !username) {
     return res.status(400).json({ message: 'Faltan parámetros.' });
+  }
+  if (!validateUsername(username)) {
+    return res.status(400).json({ message: 'Usuario inválido.' });
   }
 
   const commandMap = {
@@ -1079,7 +1099,7 @@ app.post('/api/deep-clean', async (req, res) => {
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   try {
-    const uninstallScript = (await fs.readFile(path.join(__dirname, 'scripts', 'uninstall.sh'), 'utf8'))
+    const uninstallScript = (await fs.readFile(path.join(__dirname, '..', 'scripts', 'maintenance', 'uninstall.sh'), 'utf8'))
       .replace(/\$\{/g, '\\${');
     const remoteScript = `
 cat <<'EOF_UNINSTALL' > /home/${sshData.sshUser}/uninstall.sh
