@@ -99,15 +99,16 @@
                 </div>
                 <div class="lg:col-span-2 bg-gray-800 rounded-2xl p-6 flex flex-col">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xl font-bold text-white">Consola de Logs en Vivo</h3>
+                        <h3 class="text-xl font-bold text-white">Consola de la VPS</h3>
                         <div class="flex gap-2">
+                            <button id="open-mc-console-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Abrir Consola de Minecraft</button>
                             <button id="download-console-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar log - Consola de Minecraft</button>
                             <button id="export-vps-log-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Descargar log de VPS</button>
                             <button id="clear-console-btn" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-sm">Limpiar consola</button>
                             <button id="reboot-vps-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg text-sm">Reiniciar VPS</button>
                         </div>
                     </div>
-                    <div id="log-console" class="log-console bg-black rounded-lg p-4 font-mono text-sm text-green-400 overflow-y-auto whitespace-pre-wrap flex-grow"></div>
+                    <div id="vps-console" class="log-console bg-black rounded-lg p-4 font-mono text-sm text-green-400 overflow-y-auto whitespace-pre-wrap flex-grow"></div>
                     <div class="mt-4">
                         <select id="command-dropdown" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white">
                             <option value="">Comandos comunes</option>
@@ -291,6 +292,16 @@
                         <button id="refresh-online-btn" class="bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded">Refrescar</button>
                     </div>
                     <ul id="online-players-list" class="space-y-2 mb-4"></ul>
+                    <div class="mt-2">
+                        <input type="text" id="admin-player-name" placeholder="Nombre del jugador" class="w-full bg-gray-700 p-2 rounded mb-2">
+                        <div class="flex flex-wrap gap-2">
+                            <button id="kick-player-btn" class="bg-red-600 px-3 rounded text-white text-sm">Kick</button>
+                            <button id="ban-player-btn" class="bg-red-700 px-3 rounded text-white text-sm">Ban</button>
+                            <button id="pardon-player-btn" class="bg-green-600 px-3 rounded text-white text-sm">Pardon</button>
+                            <button id="gm-survival-btn" class="bg-gray-600 px-3 rounded text-white text-sm">Survival</button>
+                            <button id="gm-creative-btn" class="bg-gray-600 px-3 rounded text-white text-sm">Creative</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div id="players-modal-footer" class="p-4 border-t border-gray-700 text-sm text-gray-400">Los cambios se aplican en tiempo real si el servidor está activo.</div>
@@ -321,6 +332,16 @@
                 <button id="file-explorer-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
             </div>
             <div id="file-explorer-body" class="flex-grow p-6 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <div id="mc-console-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 hidden">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b border-gray-700">
+                <h3 class="text-2xl font-bold text-white">Consola de Minecraft</h3>
+                <button id="mc-console-close-btn" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div id="mc-console" class="bg-black p-4 font-mono text-sm text-green-400 flex-grow overflow-y-auto"></div>
         </div>
     </div>
 

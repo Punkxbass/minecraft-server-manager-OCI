@@ -4,8 +4,10 @@ document.addEventListener('DOMContentLoaded', () => {
         sshKeyContent: null,
         lastStatusOutput: '',
         resourceMonitorInterval: null,
-        term: null,
-        terminalSocket: null,
+        vpsTerm: null,
+        vpsSocket: null,
+        mcTerm: null,
+        mcSocket: null,
     };
 
     // --- Selectores de Elementos ---
@@ -31,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const importPresetBtn = document.getElementById('import-preset-btn');
     const exportPresetBtn = document.getElementById('export-preset-btn');
     const presetFileInput = document.getElementById('preset-file-input');
-    const logConsole = document.getElementById('log-console');
+    const vpsConsole = document.getElementById('vps-console');
     const commandDropdown = document.getElementById('command-dropdown');
     const notificationArea = document.getElementById('server-status-notification');
     const cpuUsageEl = document.getElementById('cpu-usage');
@@ -77,8 +79,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const rebootVpsBtn = document.getElementById('reboot-vps-btn');
     const downloadConsoleLogBtn = document.getElementById('download-console-log-btn');
     const modsGuideBtn = document.getElementById('mods-guide-btn');
+    const openMcConsoleBtn = document.getElementById('open-mc-console-btn');
+    const mcConsoleModal = document.getElementById('mc-console-modal');
+    const mcConsoleCloseBtn = document.getElementById('mc-console-close-btn');
+    const mcConsole = document.getElementById('mc-console');
     const onlinePlayersList = document.getElementById('online-players-list');
     const refreshOnlineBtn = document.getElementById('refresh-online-btn');
+    const adminPlayerName = document.getElementById('admin-player-name');
+    const kickPlayerBtn = document.getElementById('kick-player-btn');
+    const banPlayerBtn = document.getElementById('ban-player-btn');
+    const pardonPlayerBtn = document.getElementById('pardon-player-btn');
+    const gmSurvivalBtn = document.getElementById('gm-survival-btn');
+    const gmCreativeBtn = document.getElementById('gm-creative-btn');
 
     // --- Lógica de Modales ---
     const showModal = (title, content, footerContent = '') => {
@@ -188,17 +200,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const data = await apiCall('/api/connect', { vpsIp, sshUser, sshKey: state.sshKeyContent });
             state.connectionId = data.connectionId; loginView.classList.add('hidden'); mainView.classList.remove('hidden');
-            await checkServerStatus(); startTerminal(); startResourceMonitor();
+            await checkServerStatus(); startVpsTerminal(); startResourceMonitor();
         } catch (error) { loginError.textContent = `Error: ${error.message}`;
         } finally { connectBtn.disabled = false; connectBtn.textContent = 'Conectar'; }
     }
     connectBtn.addEventListener('click', connectToServer);
     disconnectBtn.addEventListener('click', () => {
-        if (state.connectionId) apiCall('/api/disconnect', { connectionId: state.connectionId });
-        stopTerminal(); stopResourceMonitor();
+        if (state.connectionId) apiCall('/api/logout', { connectionId: state.connectionId });
+        stopVpsTerminal(); stopMcTerminal(); stopResourceMonitor();
         state.connectionId = null; state.sshKeyContent = null;
         vpsIpInput.value = ''; sshUserInput.value = ''; sshKeyInput.value = ''; sshKeyFileName.textContent = '';
-        logConsole.innerHTML = ''; notificationArea.innerHTML = '';
+        loginError.textContent = '';
+        vpsConsole.innerHTML = ''; notificationArea.innerHTML = '';
         mainView.classList.add('hidden'); loginView.classList.remove('hidden');
     });
     sshKeyUploadBtn.addEventListener('click', () => sshKeyInput.click());
@@ -332,8 +345,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Actualizar la notificación principal
             checkServerStatus();
-            if (['start', 'restart'].includes(action)) {
-                startTerminal();
+            if (['start', 'restart'].includes(action) && !mcConsoleModal.classList.contains('hidden')) {
+                startMcTerminal();
             }
 
         } catch (error) { 
@@ -405,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     exportVpsLogBtn.addEventListener('click', exportVpsLog);
     clearConsoleBtn.addEventListener('click', async () => {
-        state.term?.clear();
+        state.vpsTerm?.clear();
         try {
             await apiCall('/api/clear-console', { connectionId: state.connectionId });
         } catch (error) {
@@ -422,6 +435,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     downloadConsoleLogBtn.addEventListener('click', downloadConsoleLog);
+    openMcConsoleBtn.addEventListener('click', () => {
+        mcConsoleModal.classList.remove('hidden');
+        startMcTerminal();
+    });
+    mcConsoleCloseBtn.addEventListener('click', () => {
+        mcConsoleModal.classList.add('hidden');
+        stopMcTerminal();
+    });
     serverTypeSelect.addEventListener('change', handleServerTypeChange);
     modsGuideBtn.addEventListener('click', async () => {
         try {
@@ -447,7 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
     commandDropdown.addEventListener('change', () => {
         const cmd = commandDropdown.value;
         if (cmd) {
-            navigator.clipboard.writeText(cmd);
+            navigator.clipboard.writeText(cmd).then(() => alert('Copiado al portapapeles'));
             commandDropdown.value = '';
         }
     });
@@ -459,29 +480,55 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function startTerminal() {
-        stopTerminal();
+    function startVpsTerminal() {
+        stopVpsTerminal();
         const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-        const socket = new WebSocket(`${protocol}://${location.host}/ws/console?connectionId=${state.connectionId}`);
-        state.terminalSocket = socket;
+        const socket = new WebSocket(`${protocol}://${location.host}/ws/vps?connectionId=${state.connectionId}`);
+        state.vpsSocket = socket;
         const term = new Terminal({ cursorBlink: true });
         const fitAddon = new FitAddon.FitAddon();
         const attachAddon = new AttachAddon.AttachAddon(socket);
         term.loadAddon(fitAddon);
         term.loadAddon(attachAddon);
-        term.open(logConsole);
+        term.open(vpsConsole);
         fitAddon.fit();
         window.addEventListener('resize', () => fitAddon.fit());
-        state.term = term;
+        state.vpsTerm = term;
     }
-    function stopTerminal() {
-        if (state.terminalSocket) {
-            state.terminalSocket.close();
-            state.terminalSocket = null;
+    function stopVpsTerminal() {
+        if (state.vpsSocket) {
+            state.vpsSocket.close();
+            state.vpsSocket = null;
         }
-        if (state.term) {
-            state.term.dispose();
-            state.term = null;
+        if (state.vpsTerm) {
+            state.vpsTerm.dispose();
+            state.vpsTerm = null;
+        }
+    }
+
+    function startMcTerminal() {
+        stopMcTerminal();
+        const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+        const socket = new WebSocket(`${protocol}://${location.host}/ws/minecraft?connectionId=${state.connectionId}`);
+        state.mcSocket = socket;
+        const term = new Terminal({ cursorBlink: true });
+        const fitAddon = new FitAddon.FitAddon();
+        const attachAddon = new AttachAddon.AttachAddon(socket);
+        term.loadAddon(fitAddon);
+        term.loadAddon(attachAddon);
+        term.open(mcConsole);
+        fitAddon.fit();
+        window.addEventListener('resize', () => fitAddon.fit());
+        state.mcTerm = term;
+    }
+    function stopMcTerminal() {
+        if (state.mcSocket) {
+            state.mcSocket.close();
+            state.mcSocket = null;
+        }
+        if (state.mcTerm) {
+            state.mcTerm.dispose();
+            state.mcTerm = null;
         }
     }
     async function populateVersionDropdowns() {
@@ -620,6 +667,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try { await apiCall('/api/manage-player', { connectionId: state.connectionId, list: 'whitelist', action: 'add', username }); loadPlayersModal(); }
         catch (err) { alert(err.message); }
     });
+
+    // comandos de administración adicionales
+    function playerAdminCommand(template) {
+        const name = adminPlayerName.value.trim();
+        if (!name) { alert('Ingresa un nombre de jugador'); return; }
+        sendCommandDirect(template.replace('{player}', name));
+    }
+    kickPlayerBtn.addEventListener('click', () => playerAdminCommand('kick {player}'));
+    banPlayerBtn.addEventListener('click', () => playerAdminCommand('ban {player}'));
+    pardonPlayerBtn.addEventListener('click', () => playerAdminCommand('pardon {player}'));
+    gmSurvivalBtn.addEventListener('click', () => playerAdminCommand('gamemode survival {player}'));
+    gmCreativeBtn.addEventListener('click', () => playerAdminCommand('gamemode creative {player}'));
 
     // --- Copias de seguridad ---
     manageBackupsBtn.addEventListener('click', openBackupsModal);

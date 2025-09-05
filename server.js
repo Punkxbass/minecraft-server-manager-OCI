@@ -40,21 +40,49 @@ const sshConnections = new Map();
 const SERVER_PATH_BASE = (user) => `/home/${user}/minecraft-server`;
 const escapeForScreen = (cmd) => cmd.replace(/["\$]/g, '\\$&');
 
-const wss = new WebSocket.Server({ noServer: true });
+// WebSocket servers for VPS shell and Minecraft console
+const wssVps = new WebSocket.Server({ noServer: true });
+const wssMinecraft = new WebSocket.Server({ noServer: true });
 
 server.on('upgrade', (request, socket, head) => {
   const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`);
-  if (pathname === '/ws/console') {
-    wss.handleUpgrade(request, socket, head, (ws) => {
+  if (pathname === '/ws/vps') {
+    wssVps.handleUpgrade(request, socket, head, (ws) => {
       ws.connectionId = searchParams.get('connectionId');
-      wss.emit('connection', ws, request);
+      wssVps.emit('connection', ws, request);
+    });
+  } else if (pathname === '/ws/minecraft') {
+    wssMinecraft.handleUpgrade(request, socket, head, (ws) => {
+      ws.connectionId = searchParams.get('connectionId');
+      wssMinecraft.emit('connection', ws, request);
     });
   } else {
     socket.destroy();
   }
 });
 
-wss.on('connection', (ws) => {
+// VPS shell WebSocket
+wssVps.on('connection', (ws) => {
+  const sshData = sshConnections.get(ws.connectionId);
+  if (!sshData) {
+    ws.close();
+    return;
+  }
+  sshData.conn.shell({ term: 'xterm-color' }, (err, stream) => {
+    if (err) {
+      ws.close();
+      return;
+    }
+    stream.on('data', (data) => ws.send(data.toString()));
+    stream.stderr.on('data', (data) => ws.send(data.toString()));
+    ws.on('message', (msg) => stream.write(msg));
+    ws.on('close', () => stream.end());
+    stream.on('close', () => ws.close());
+  });
+});
+
+// Minecraft console WebSocket
+wssMinecraft.on('connection', (ws) => {
   const sshData = sshConnections.get(ws.connectionId);
   if (!sshData) {
     ws.close();
@@ -175,13 +203,24 @@ app.post('/api/connect', (req, res) => {
     .connect({ host: vpsIp, port: 22, username: sshUser, privateKey: sshKey, readyTimeout: 30000 });
 });
 
-app.post('/api/disconnect', (req, res) => {
-  const { connectionId } = req.body;
+function terminateConnection(connectionId) {
   const sshData = sshConnections.get(connectionId);
   if (sshData) {
     sshData.conn.end();
     sshConnections.delete(connectionId);
   }
+}
+
+app.post('/api/logout', (req, res) => {
+  const { connectionId } = req.body;
+  terminateConnection(connectionId);
+  res.json({ success: true, message: 'Sesión finalizada.' });
+});
+
+// alias antiguo
+app.post('/api/disconnect', (req, res) => {
+  const { connectionId } = req.body;
+  terminateConnection(connectionId);
   res.json({ success: true, message: 'Desconectado.' });
 });
 
@@ -450,11 +489,8 @@ app.post('/api/list-files', async (req, res) => {
   const { connectionId, dir = '' } = req.body;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const baseDir = `/home/${sshData.sshUser}`;
-  const safeRel = path.posix.normalize('/' + dir).replace(/^\/+/, '');
-  const targetDir = path.posix.join(baseDir, safeRel);
-  if (!targetDir.startsWith(baseDir)) return res.status(400).json({ message: 'Ruta no permitida.' });
   try {
+    const targetDir = resolveSafePath(dir);
     const escaped = targetDir.replace(/'/g, "'\\''");
     const cmd = `find '${escaped}' -maxdepth 1 -mindepth 1 -printf '%f\t%y\n'`;
     const { output } = await execSshCommand(sshData.conn, cmd);
@@ -472,10 +508,12 @@ app.get('/api/download-file', (req, res) => {
   const { connectionId, file } = req.query;
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
-  const baseDir = `/home/${sshData.sshUser}`;
-  const safeRel = path.posix.normalize('/' + (file || '')).replace(/^\/+/, '');
-  const targetFile = path.posix.join(baseDir, safeRel);
-  if (!targetFile.startsWith(baseDir)) return res.status(400).json({ message: 'Ruta no permitida.' });
+  let targetFile;
+  try {
+    targetFile = resolveSafePath(file);
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
   sshData.conn.sftp((err, sftp) => {
     if (err) return res.status(500).json({ message: 'Error SFTP.' });
     const stream = sftp.createReadStream(targetFile);
