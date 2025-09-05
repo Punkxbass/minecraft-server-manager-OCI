@@ -6,6 +6,8 @@ set -e
 MINECRAFT_USER="minecraft"
 MINECRAFT_GROUP="minecraft"
 SERVER_DIR="/opt/minecraft/server"
+MAX_RAM="8G"
+MIN_RAM="4G"
 
 echo "Paso 1/6: Creando usuario y grupo..."
 if id -u "$MINECRAFT_USER" &>/dev/null; then
@@ -64,6 +66,8 @@ fi
 
 sed -e "s/{{USER}}/${MINECRAFT_USER}/g" \
     -e "s|{{WORKING_DIR}}|${SERVER_DIR}|g" \
+    -e "s/{{MAX_RAM}}/${MAX_RAM}/g" \
+    -e "s/{{MIN_RAM}}/${MIN_RAM}/g" \
     scripts/minecraft.service.template > /etc/systemd/system/minecraft.service
 
 echo "Verificando la sintaxis del archivo de servicio generado..."
@@ -76,14 +80,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "Recargando el daemon de systemd..."
-systemctl daemon-reload
+echo "Recargando el daemon de systemd para aplicar los cambios..."
+sudo systemctl daemon-reload
 
-echo "Habilitando el servicio minecraft para el inicio automático..."
-systemctl enable minecraft.service
+echo "Reiniciando el servicio de Minecraft para usar la nueva configuración..."
+sudo systemctl restart minecraft.service
 
-echo "Iniciando el servicio minecraft..."
-systemctl start minecraft.service
+echo "Habilitando el servicio para el inicio automático..."
+sudo systemctl enable minecraft.service
 
 echo "Instalación del servicio completada. Estado del servicio:"
-systemctl status minecraft.service --no-pager
+sudo systemctl status minecraft.service --no-pager
