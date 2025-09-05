@@ -13,7 +13,7 @@ After=network-online.target
 User=$MC_USER
 Group=$MC_USER
 WorkingDirectory=$MC_DIR
-ExecStart=/usr/bin/java -Xmx$MAX_RAM -Xms$MIN_RAM -jar $JAR_NAME nogui
+ExecStart=/usr/bin/screen -S minecraft-console -d -m /usr/bin/java -Xmx$MAX_RAM -Xms$MIN_RAM -jar $JAR_NAME nogui
 Restart=on-failure
 RestartSec=30s
 StandardInput=null
@@ -33,5 +33,5 @@ if [ $? -ne 0 ]; then
 fi
 
 sudo systemctl daemon-reload
-sudo systemctl enable minecraft.service
 sudo systemctl restart minecraft.service
+sudo systemctl enable minecraft.service

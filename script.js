@@ -34,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportPresetBtn = document.getElementById('export-preset-btn');
     const presetFileInput = document.getElementById('preset-file-input');
     const vpsConsole = document.getElementById('vps-console');
-    const commandDropdown = document.getElementById('command-dropdown');
     const notificationArea = document.getElementById('server-status-notification');
     const cpuUsageEl = document.getElementById('cpu-usage');
     const ramUsageEl = document.getElementById('ram-usage');
@@ -83,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mcConsoleModal = document.getElementById('mc-console-modal');
     const mcConsoleCloseBtn = document.getElementById('mc-console-close-btn');
     const mcConsole = document.getElementById('mc-console');
+    const mcCommandList = document.getElementById('mc-command-list');
     const onlinePlayersList = document.getElementById('online-players-list');
     const refreshOnlineBtn = document.getElementById('refresh-online-btn');
     const adminPlayerName = document.getElementById('admin-player-name');
@@ -459,19 +459,28 @@ document.addEventListener('DOMContentLoaded', () => {
         { cmd: '/gamemode survival <jugador>', desc: 'Modo supervivencia' },
         { cmd: '/gamemode creative <jugador>', desc: 'Modo creativo' }
     ];
-    commonCommands.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.cmd;
-        opt.textContent = `${c.cmd} - ${c.desc}`;
-        commandDropdown.appendChild(opt);
-    });
-    commandDropdown.addEventListener('change', () => {
-        const cmd = commandDropdown.value;
-        if (cmd) {
-            navigator.clipboard.writeText(cmd).then(() => alert('Copiado al portapapeles'));
-            commandDropdown.value = '';
-        }
-    });
+
+    const showToast = (message) => {
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.className = 'fixed bottom-4 right-4 bg-gray-700 text-white px-4 py-2 rounded shadow-lg';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+    };
+
+    function renderCommandList() {
+        mcCommandList.innerHTML = '';
+        commonCommands.forEach(c => {
+            const li = document.createElement('li');
+            li.className = 'cursor-pointer hover:bg-gray-700 p-2 rounded';
+            li.innerHTML = `<span class="font-mono text-green-400">${c.cmd}</span> - <span class="text-gray-300">${c.desc}</span>`;
+            li.addEventListener('click', () => {
+                navigator.clipboard.writeText(c.cmd + ' ').then(() => showToast('¡Comando copiado!'));
+            });
+            mcCommandList.appendChild(li);
+        });
+    }
+    renderCommandList();
 
     function sendCommandDirect(command) {
         if (!command) return;
@@ -487,11 +496,14 @@ document.addEventListener('DOMContentLoaded', () => {
         state.vpsSocket = socket;
         const term = new Terminal({ cursorBlink: true });
         const fitAddon = new FitAddon.FitAddon();
-        const attachAddon = new AttachAddon.AttachAddon(socket);
+        const attachAddon = new AttachAddon.AttachAddon(socket, { bidirectional: true });
         term.loadAddon(fitAddon);
         term.loadAddon(attachAddon);
         term.open(vpsConsole);
         fitAddon.fit();
+        term.focus();
+        vpsConsole.addEventListener('click', () => term.focus());
+        socket.addEventListener('open', () => term.focus());
         window.addEventListener('resize', () => fitAddon.fit());
         state.vpsTerm = term;
     }
@@ -513,11 +525,14 @@ document.addEventListener('DOMContentLoaded', () => {
         state.mcSocket = socket;
         const term = new Terminal({ cursorBlink: true });
         const fitAddon = new FitAddon.FitAddon();
-        const attachAddon = new AttachAddon.AttachAddon(socket);
+        const attachAddon = new AttachAddon.AttachAddon(socket, { bidirectional: true });
         term.loadAddon(fitAddon);
         term.loadAddon(attachAddon);
         term.open(mcConsole);
         fitAddon.fit();
+        term.focus();
+        mcConsole.addEventListener('click', () => term.focus());
+        socket.addEventListener('open', () => term.focus());
         window.addEventListener('resize', () => fitAddon.fit());
         state.mcTerm = term;
     }

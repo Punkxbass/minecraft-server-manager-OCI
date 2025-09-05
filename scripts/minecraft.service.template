@@ -11,8 +11,9 @@ Group={{USER}}
 # Set the working directory to where the server files are located
 WorkingDirectory={{WORKING_DIR}}
 
-# Command to start the server. Adjust memory flags (-Xmx, -Xms) as needed.
-ExecStart=/usr/bin/screen -S minecraft-console -d -m /usr/bin/java -Xmx4G -Xms1G -jar server.jar nogui
+# Command to start the server inside a named screen session.
+# Memory values are replaced during installation.
+ExecStart=/usr/bin/screen -S minecraft-console -d -m /usr/bin/java -Xmx{{MAX_RAM}} -Xms{{MIN_RAM}} -jar server.jar nogui
 
 # Restart policy for resilience
 Restart=on-failure
