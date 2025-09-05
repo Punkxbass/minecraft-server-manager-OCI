@@ -20,14 +20,17 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
-const rootDir = '/home/ubuntu';
-
 function resolveSafePath(requestedPath = '') {
   const safePath = path.posix
     .normalize('/' + requestedPath)
     .replace(/^\/+/, '');
-  const fullPath = path.join(rootDir, safePath);
-  if (!fullPath.startsWith(rootDir)) {
+
+  // Permitir acceso a /home/ubuntu y subdirectorios
+  const allowedPaths = ['/home/ubuntu', '/home/minecraft'];
+  const fullPath = safePath ? path.join('/home/ubuntu', safePath) : '/home/ubuntu';
+
+  const isAllowed = allowedPaths.some(allowed => fullPath.startsWith(allowed));
+  if (!isAllowed) {
     throw new Error('Ruta no permitida.');
   }
   return fullPath;
@@ -88,19 +91,40 @@ wssMinecraft.on('connection', (ws) => {
     ws.close();
     return;
   }
-  sshData.conn.exec('screen -r minecraft-console', { pty: true }, (err, stream) => {
+
+  // Verificar que la sesión de screen existe antes de conectar
+  sshData.conn.exec('screen -list | grep -q minecraft-console', (err, checkStream) => {
     if (err) {
+      ws.send('Error: No hay sesión de Minecraft activa\r\n');
       ws.close();
       return;
     }
-    stream.on('data', (data) => ws.send(data.toString()));
-    stream.stderr.on('data', (data) => ws.send(data.toString()));
-    ws.on('message', (msg) => stream.write(msg));
-    ws.on('close', () => {
-      stream.write('\u0001d');
-      stream.end();
+
+    checkStream.on('close', (code) => {
+      if (code !== 0) {
+        ws.send('Error: Servidor de Minecraft no está ejecutándose\r\n');
+        ws.close();
+        return;
+      }
+
+      // Conectar a la sesión de screen existente
+      sshData.conn.exec('screen -r minecraft-console', { pty: true }, (err, stream) => {
+        if (err) {
+          ws.send('Error: No se puede conectar a la consola\r\n');
+          ws.close();
+          return;
+        }
+
+        stream.on('data', (data) => ws.send(data.toString()));
+        stream.stderr.on('data', (data) => ws.send(data.toString()));
+        ws.on('message', (msg) => stream.write(msg));
+        ws.on('close', () => {
+          stream.write('\u0001d'); // Ctrl+A, D para dejar la sesión
+          stream.end();
+        });
+        stream.on('close', () => ws.close());
+      });
     });
-    stream.on('close', () => ws.close());
   });
 });
 
@@ -241,8 +265,35 @@ app.post('/api/install-server', async (req, res) => {
   const minRamSafe = /^\d+[MG]$/.test(minRam) ? minRam : '4G';
   const maxRamSafe = /^\d+[MG]$/.test(maxRam) ? maxRam : '8G';
 
-  const serviceScript = (await fs.readFile(path.join(__dirname, 'scripts', 'installer.sh'), 'utf8'))
-    .replace(/\$\{/g, '\\${');
+  const serviceScript = `#!/bin/bash
+set -e
+
+SERVICE_PATH=/etc/systemd/system/minecraft.service
+
+sudo tee "$SERVICE_PATH" > /dev/null <<EOF
+[Unit]
+Description=Minecraft Server
+After=network.target
+
+[Service]
+Type=forking
+User=\${MC_USER}
+Group=\${MC_USER}
+WorkingDirectory=\${MC_DIR}
+ExecStart=/usr/bin/screen -dmS minecraft-console bash -c 'exec \${MC_DIR}/start.sh'
+ExecStop=/usr/bin/screen -S minecraft-console -X quit
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable minecraft.service
+
+echo "Servicio systemd configurado correctamente"
+`;
 
   const installScript = `
 #!/bin/bash
@@ -357,9 +408,9 @@ app.post('/api/server-control', async (req, res) => {
 
   const lockFilePath = `${SERVER_PATH_BASE(sshData.sshUser)}/world/session.lock`;
   const commands = {
-    start: `rm -f ${lockFilePath} && sudo systemctl start minecraft`,
+    start: `rm -f ${lockFilePath} && sudo systemctl start minecraft && sleep 3`,
     stop: 'sudo systemctl stop minecraft',
-    restart: `sudo systemctl stop minecraft && rm -f ${lockFilePath} && sudo systemctl start minecraft`,
+    restart: `sudo systemctl stop minecraft && rm -f ${lockFilePath} && sudo systemctl start minecraft && sleep 3`,
     status: 'sudo systemctl status minecraft --no-pager'
   };
 
@@ -367,8 +418,22 @@ app.post('/api/server-control', async (req, res) => {
   if (!command) return res.status(400).json({ message: 'Acción no válida.' });
 
   try {
-    const { output, error } = await execSshCommand(sshData.conn, command);
-    res.json({ success: true, output: output || error });
+    const { output, error, code } = await execSshCommand(sshData.conn, command);
+
+    // Para acciones de start y restart, verificar que realmente se inició
+    if (['start', 'restart'].includes(action)) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Esperar 2 segundos
+      const { output: statusOutput } = await execSshCommand(
+        sshData.conn,
+        'systemctl is-active minecraft && screen -list | grep minecraft-console'
+      );
+      res.json({
+        success: true,
+        output: `${output || error}\n\nEstado verificado:\n${statusOutput}`
+      });
+    } else {
+      res.json({ success: true, output: output || error });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -379,8 +444,13 @@ app.post('/api/server-status', async (req, res) => {
   const sshData = sshConnections.get(connectionId);
   if (!sshData) return res.status(400).json({ message: 'Conexión no encontrada.' });
   try {
-    const { output } = await execSshCommand(sshData.conn, 'systemctl is-active --quiet minecraft && echo "ACTIVE" || echo "INACTIVE"');
-    res.json({ success: true, isActive: output.trim() === 'ACTIVE' });
+    // Verificar tanto el servicio systemd como la sesión de screen
+    const { output } = await execSshCommand(
+      sshData.conn,
+      'systemctl is-active --quiet minecraft && screen -list | grep -q minecraft-console && echo "ACTIVE" || echo "INACTIVE"'
+    );
+    const isActive = output.trim() === 'ACTIVE';
+    res.json({ success: true, isActive });
   } catch {
     res.json({ success: true, isActive: false });
   }
